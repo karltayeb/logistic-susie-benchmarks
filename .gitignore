@@ -5,3 +5,5 @@
 .DS_Store
 
 _targets/meta/meta
+
+_targets/meta/
