@@ -49,7 +49,9 @@ logistic_ibss_functions <- tidyr::tribble(
   #'ibss_veb_L5', 'fit_ibss_veb', list(L=5),
   'ibss_uvb_L5', 'fit_ibss_uvb', list(L=5),
   'ibss_uvb2_L5', 'fit_ibss_uvb2', list(L=5),
-  'ibss_glm_L5', 'fit_ibss_glm', list(L=5)
+  'ibss_glm_L5', 'fit_ibss_glm', list(L=5),
+  'binsusie_L5', 'fit_binsusie', list(L=5, estimate_prior_variance=F, prior_variance=1),
+  'binsusie2_L5', 'fit_binsusie', list(L=5, estimate_prior_variance=F, prior_variance=1)
 )
 
 

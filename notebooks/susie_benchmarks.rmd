@@ -29,7 +29,9 @@ plot_colors <- c(
   'ibss_uvb2_L5' = 'brown3', 
   'ibss_vb_L5' = 'darkgoldenrod1', 
   'ibss_vb2_L5' = 'darkgoldenrod3',
-  'ibss_vbc_L5' = 'darkorange1'
+  'ibss_vbc_L5' = 'darkorange1',
+  'binsusie_L5' = 'olivedrab3',
+  'binsusie2_L5' = 'olivedrab4'
   # 'veb_ser' = 'darkorchid1',
   # 'quad_ser' = 'deeppink1'
 )

@@ -31,6 +31,19 @@ fit_ibss_veb <- function(X, y, L){
   logisticsusie::ibss_from_ser(X, y, L=L, ser_function = logisticsusie::fit_veb_ser)
 }
 
+
+# binsusie
+fit_binsusie <- function(X, y, L, ...){
+  tictoc::tic()
+  fit <- binsusie(X, y, L=L, ...)
+  timer <- tictoc::toc()
+  fit$data <- NULL
+  fit$xi <- fit$params$xi
+  fit$params <- NULL
+  fit$elapsed_time <- timer$toc - timer$tic
+  return(fit)
+}
+
 # IBSS2 ---------
 # Define IBSS algorithms with different base SER approximations
 
