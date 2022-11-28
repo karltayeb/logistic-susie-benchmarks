@@ -1,0 +1,5 @@
+# Logistic SuSiE Benchmarks
+
+## Links
+- [Comparison of logistic SERs](ser_benchmarks.html)
+- [Comparison of logistic SuSiEs](susie_benchmarks.html)

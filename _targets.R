@@ -324,7 +324,7 @@ yusha_example_targets <- list(
 
 
 website <- list(
-  #tar_render(web_home, 'notebooks/index.rmd', output_dir='docs'),
+  tar_render(web_home, 'notebooks/index.rmd', output_dir='docs'),
   tar_render(ser_benchmarks, 'notebooks/ser_benchmarks.rmd', output_dir='docs'),
   tar_render(susie_benchmarks, 'notebooks/susie_benchmarks.rmd', output_dir='docs')
 )
