@@ -51,7 +51,8 @@ logistic_ibss_functions <- tidyr::tribble(
   'ibss_uvb2_L5', 'fit_ibss_uvb2', list(L=5),
   'ibss_glm_L5', 'fit_ibss_glm', list(L=5),
   'binsusie_L5', 'fit_binsusie', list(L=5, estimate_prior_variance=F, prior_variance=1),
-  'binsusie2_L5', 'fit_binsusie', list(L=5, estimate_prior_variance=F, prior_variance=1)
+  'binsusie2_L5', 'fit_binsusie', list(L=5, estimate_prior_variance=F, prior_variance=1),
+  'ibss2m_L5', 'ibss2m', list(L=5, maxit=100)
 )
 
 
@@ -67,6 +68,20 @@ sim_X_dense <- logisticsusie:::sim_X
 
 
 # Generate y --------
+simulate_null <- function(X){
+  # simulate across multiple settings
+  beta0 <- c(-2, -1, -.5, 0)
+  re_var <- c(0)
+  reps <- 1:1
+
+  # generate simulations
+  sims <- tidyr::crossing(beta0=beta0, re_var=re_var, rep=reps) %>%
+    dplyr::mutate(X_name = attributes(X)$name) %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(sim = list(logisticsusie:::sim_y_null(X, beta0, re_var))) %>%
+    ungroup()
+  return(sims)
+}
 
 simulate_half_normal <- function(X){
   # simulate across multiple settings
@@ -106,6 +121,11 @@ simulate_half_normal_re <- function(X){
   ~y_name, ~y_fun, ~y_args, ~y_seed,
   'half_normal', 'simulate_half_normal', list(), 1,
   'half_normal_re', 'simulate_half_normal_re', list(), 3
+)
+
+.null_y_spec <- tidyr::tribble(
+  ~y_name, ~y_fun, ~y_args, ~y_seed,
+  'null', 'simulate_null', list(), -1
 )
 
 # Scoring -------
@@ -283,6 +303,16 @@ ibss_target <- list(
 )
 
 
+null_susie_target <- list(
+  tar_target(null_y_spec, .null_y_spec),
+  tar_target(ibss2_spec, ibss_spec %>% tail(1)),
+  tar_target(
+    null_susie_fits, big_fit(X_spec, null_y_spec, ibss2_spec),
+    pattern = cross(X_spec, null_y_spec, ibss2_spec)
+  )
+)
+
+
 # Yusha example -------
 # analysis function
 # take yushas example, take the n_top marginal enrichments and fit logistic ibss
@@ -335,5 +365,6 @@ website <- list(
 list(
   ser_target,
   ibss_target,
+  null_susie_target,
   website
 )
