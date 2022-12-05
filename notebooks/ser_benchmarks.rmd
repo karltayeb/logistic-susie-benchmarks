@@ -82,8 +82,58 @@ plot
 
 
 ```{r}
-roc_plot <- tar_read(ser_pip_roc, store='_targets/')
-roc_plot + xlim(0, 0.2) + ylim(0, 0.4) + scale_color_manual(values=plot_colors)
+roc_plot_data <- tar_read(ser_pip_roc, store='_targets/')
+
+roc_plot_data %>%
+  ggplot(aes(d=causal, m = pip, color=fit_method)) +
+  plotROC::geom_roc(n.cuts = 0, size.point=1, size=0.5) + 
+  scale_color_manual(values=plot_colors) +
+  xlim(0, 0.2) + 
+  ylim(0, 0.4)
+```
+
+```{r}
+get_y_range <- function(y){
+  res <- quantile(purrr::map_dbl(1:50, ~mean(sample(y, replace = T))), c(0.05, 0.5, 0.95))
+  names(res) <- c('ymin', 'y', 'ymax')
+  return(as.list(res))
+}
+
+make_pip_calibration_plot <- function(pips, facets = 'fit_method'){
+  pip_bins <- seq(0, 1.0, by=0.05)
+
+  pip_calibration_data <- pips %>%
+    mutate(pip_bin = cut(pip, pip_bins, labels=F)) %>%
+    mutate(pip_bin = seq(0.05, 1.0, by=0.05)[pip_bin]) %>%
+    select(-pip) %>%
+    group_by(across(c(facets, 'pip_bin'))) %>%
+    summarise(
+      size = n(),
+      y_range = list(get_y_range(causal))
+    ) %>% 
+    unnest_wider(y_range) %>%
+    ungroup()
+  
+  plot <- pip_calibration_data %>%
+    ggplot(aes(x=pip_bin, y=y, ymin=ymin, ymax=ymax)) + 
+    geom_pointrange(size=0.1) +
+    geom_abline(intercept = 0, slope = 1, color='red') +
+    facet_wrap(as.formula(paste("~", facets))) + 
+    theme_bw()
+    
+  return(plot)
+}
+
+
+pips <- tar_read(ser_score_pips)
+
+pips <- pips %>% 
+  unnest_longer(c(pip, causal)) %>%
+  select(y_name, fit_method, L, pip, causal)
+
+make_pip_calibration_plot(pips %>% filter(L == 1), facets = 'fit_method')
+make_pip_calibration_plot(pips %>% filter(L == 3), facets = 'fit_method')
+make_pip_calibration_plot(pips %>% filter(L == 5), facets = 'fit_method')
 ```
 
 ```{r}

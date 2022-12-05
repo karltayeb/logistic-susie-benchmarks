@@ -33,10 +33,16 @@ fit_ibss_veb <- function(X, y, L){
 
 
 # binsusie
-fit_binsusie <- function(X, y, L, ...){
+fit_binsusie_wrapped <- function(X, y, L, ...){
   tictoc::tic()
-  fit <- binsusie(X, y, L=L, ...)
+  fit <- logisticsusie::binsusie(X, y, L=L, ...)
   timer <- tictoc::toc()
+
+  fit$psi <- list(
+    mu = logisticsusie:::compute_Xb.binsusie(fit),
+    mu2 = logisticsusie:::compute_Xb2.binsusie(fit)
+  )
+
   fit$data <- NULL
   fit$xi <- fit$params$xi
   fit$params <- NULL
@@ -44,7 +50,16 @@ fit_binsusie <- function(X, y, L, ...){
   return(fit)
 }
 
-# IBSS2 ---------
-# Define IBSS algorithms with different base SER approximations
 
+# Linear SuSiE-----
+
+fit_linear_susie <- function(X, y, L, ...){
+  fit <- susieR::susie(X, y, L, scaled_prior_variance = 1.0, standardize = F)
+  fit$lbf_model <- fit$lbf
+  fit$lbf <- drop(fit$lbf_variable)
+  fit$mu <- drop(fit$mu)
+  fit$var <- drop(fit$mu2) - fit$mu^2
+  fit$alpha <- drop(fit$alpha)
+  return(fit)
+}
 
