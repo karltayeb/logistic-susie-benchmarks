@@ -7,3 +7,11 @@
 _targets/meta/meta
 
 _targets/meta/
+
+cache/resources/
+
+linear_fail_cache/html/unnamed-chunk-1_7dd96578143c2fe0c045af719802c43f.rds
+
+notebooks/cache/resources/C1.1.X_210554af7ee8950b6c33dbc4b0065d73.rds
+
+notebooks/cache/resources/C1.10.X_210554af7ee8950b6c33dbc4b0065d73.rds

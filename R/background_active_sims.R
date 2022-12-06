@@ -17,7 +17,7 @@ sim_y_ba <- function(X, background, active, L, N=1){
 
 sim_ba <- function(X, background, active, L){
   # simulate across multiple settings
-  reps <- 1:20
+  reps <- 1:5
 
   # generate simulations
   sims <- tidyr::crossing(bacgkround=background, active=active, L=L, rep=reps) %>%
@@ -57,7 +57,7 @@ make_ba_fit_spec <- function(){
     'linear_ser', 'fit_linear_susie', list(L=1),
     'linear_susie_L5', 'fit_linear_susie', list(L=5),
     'binsusie2_L5', 'fit_binsusie_wrapped', list(L=5, estimate_prior_variance=T, prior_variance=1),
-    'ibss2m_L5', 'ibss2m', list(L=5, maxit=50, track_elbo=T)
+    #'ibss2m_L5', 'ibss2m', list(L=5, maxit=50, track_elbo=T)
   ) %>%
     mutate(fit_sym = rlang::syms(fit_fun))
   return(spec)
@@ -74,7 +74,7 @@ make_ba_spec <- function(){
 }
 
 background_active_target <- list(
-  tar_target(ba_spec, make_ba_spec() %>% head(1)),
+  tar_target(ba_spec, make_ba_spec()),
   tar_target(
     ba_fits, fit_from_spec(ba_spec),
     pattern = map(ba_spec)
