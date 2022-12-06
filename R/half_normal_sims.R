@@ -31,7 +31,8 @@ make_half_normal_sim_spec <- function(){
       y_name = 'half_normal',
       y_fun = 'single_half_normal_sim',
       y_seed = row_number()
-    )
+    ) %>%
+    mutate(y_sym = rlang::syms(y_fun))
   return(half_normal_spec)
 }
 
@@ -52,7 +53,8 @@ make_half_normal_fit_spec <- function(){
     'ibss_vb_L5', 'fit_ibss_vb', list(L=5),
     'ibss_uvb_L5', 'fit_ibss_uvb', list(L=5),
     'ibss2m_L5', 'ibss2m', list(L=5, maxit=50, track_elbo=T)
-  )
+  ) %>%
+  mutate(fit_sym = rlang::syms(fit_fun))
   return(spec)
 }
 
