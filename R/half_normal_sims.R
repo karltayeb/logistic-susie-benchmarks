@@ -2,8 +2,7 @@
 
 single_half_normal_sim <- function(X, beta0, beta_sigma, L){
   # simulate across multiple settings
-  reps <- 1:1
-  # reps <- 1:20
+  reps <- 1:25
 
   # generate simulations
   sims <- tidyr::crossing(beta0=beta0, beta_sigma=beta_sigma, L = L, rep=reps) %>%
@@ -19,9 +18,7 @@ single_half_normal_sim <- function(X, beta0, beta_sigma, L){
 make_half_normal_sim_spec <- function(){
   beta0 <- c(-2)
   beta_sigma <- c(0.2, 0.4, 0.6, 0.8, 1.0, 2.0) / sqrt(2/pi)
-  beta_sigma <- c(2.0)
   L <- c(1, 3, 5)
-  L <- c(1)
   half_normal_spec <- tidyr::crossing(beta0=beta0, beta_sigma=beta_sigma, L=L) %>%
     rowwise() %>%
     mutate(y_args = list(c_across())) %>%
@@ -46,12 +43,12 @@ make_half_normal_fit_spec <- function(){
     'uvb_ser_re', 'fit_uvb_ser_re', list(),
     'vb_ser_corrected', 'fit_bin_ser_corrected', list(),
     'linear_ser', 'fit_linear_susie', list(L=1),
-    #'veb_ser', 'fit_veb_ser', list(),
     'quad_ser', 'fit_quad_ser', list(n=2^8),
+    #'veb_ser', 'fit_veb_ser', list(),
     'binsusie2_L5', 'fit_binsusie_wrapped', list(L=5, estimate_prior_variance=T, prior_variance=1),
     'linear_susie_L5', 'fit_linear_susie', list(L=5),
-    'ibss_vb_L5', 'fit_ibss_vb', list(L=5),
-    'ibss_uvb_L5', 'fit_ibss_uvb', list(L=5),
+    # 'ibss_vb_L5', 'fit_ibss_vb', list(L=5),
+    # 'ibss_uvb_L5', 'fit_ibss_uvb', list(L=5),
     'ibss2m_L5', 'ibss2m', list(L=5, maxit=50, track_elbo=T)
   ) %>%
   mutate(fit_sym = rlang::syms(fit_fun))
