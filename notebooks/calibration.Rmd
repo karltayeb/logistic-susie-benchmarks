@@ -39,7 +39,8 @@ We repeat these simulations with different design matrices $X$. In all cases we 
 ```
 
 ```{r}
-library(tidyverse)
+library(dplyr)
+library(tidyr)
 library(targets)
 ```
 
