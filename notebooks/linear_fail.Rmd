@@ -1,0 +1,61 @@
+---
+title: "Linear Failure"
+author: "Karl Tayeb"
+date: "2022-12-06"
+output: html_document
+---
+
+Here is a quick example where applying linear SuSiE fails with binary data.
+Below we take the gene sets from MsigDB "C2". We subset to a random 1000 gene sets, and retain genes that appear in at least 5 gene sets.
+Then we select 1 random gene set and generate a gene list that include each gene in the gene set with probability 1/2.
+
+```{r}
+library(purrr)
+library(tictoc)
+source('R/background_active_sims.R')
+
+set.seed(1)
+X <- gseasusie::load_msigdb_geneset_x('C2')$X
+X <- X[, sample(dim(X)[2], 1000)]
+X <- X[BiocGenerics::rowSums(X)>5,]
+
+sim <- sim_y_ba(as.matrix(X), -10, 0, L=1)
+fit <- susieR::susie(X, sim$y)
+fit.logistic <- xfun::cache_rds(logisticsusie::binsusie(X, sim$y, max_iter = 50))
+```
+
+We see that the logistic model correctly selects the correct gene set. In contrast the linear model seems to fail spectacularly. By all accounts this is an "easy" problem. There is one strong enrichment signal.
+
+```{r}
+plot.pip <- function(sim, model, ...){
+  plot(model$pip, ...)
+  points(sim$idx, model$pip[sim$idx], col='red')
+}
+
+par(mfrow=c(1,2))
+plot.pip(sim, fit, main='Linear')
+plot.pip(sim, fit.logistic, main='Logistic')
+```
+
+Upon closer inspection we see that several of the false positive gene sets don't have any overlap with the gene list $y$.
+Instead, they 
+
+```{r}
+lin_select <- which(fit$pip > 0.9)
+fp <- setdiff(lin_select, sim$idx)
+
+image(cor(as.matrix(X[, c(sim$idx, fp)])))
+
+# overlap with y
+sim$y %*% X[,c(sim$idx, fp)]
+
+# overlap with x \ y
+(X[, sim$idx] - sim$y) %*% X[, c(sim$idx, fp)]
+
+# strong evidence for each effect (large BF)
+# but small effects (first effect is the true effect, order of magniture larger)
+fit$lbf
+rowSums(fit$alpha * fit$mu)
+```
+
+

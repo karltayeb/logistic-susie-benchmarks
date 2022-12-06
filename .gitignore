@@ -3,8 +3,3 @@
 .Rdata
 .httr-oauth
 .DS_Store
-
-_targets/meta/meta
-
-_targets/meta/
-_targets/meta/meta
