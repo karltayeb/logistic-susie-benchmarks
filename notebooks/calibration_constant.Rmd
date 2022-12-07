@@ -148,24 +148,27 @@ cs <- cs %>%
 cs <- cs %>%
   unnest_longer(cs) %>%
   rowwise() %>%
-  mutate(covered = any(cs$covered))
+  mutate(covered = any(cs$covered), cs_size=cs$size)
 
-make_coverage_plot <- function(cs){
+make_coverage_plot <- function(cs, max_size=1e10){
   coverage_plot_data <- cs %>% 
-  group_by(fit_method, X_name, L) %>%
-  summarise(
-    size = n(),
-    y_range = list(get_y_range(covered))
-  ) %>% 
-  unnest_wider(y_range) %>%
-  ungroup()
-  
-  coverage_plot_data %>%
+    filter(cs_size < max_size) %>%
+    group_by(fit_method, X_name, L) %>%
+    summarise(
+      size = n(),
+      y_range = list(get_y_range(covered))
+    ) %>% 
+    unnest_wider(y_range) %>%
+    ungroup()
+
+  plot <- coverage_plot_data %>%
     ggplot(aes(x=as.factor(L), y=y, ymin=ymin, ymax=ymax, color=as.factor(X_name))) +
     geom_pointrange(position=position_dodge(0.3)) + 
     geom_hline(yintercept = 0.95, size=0.1) + 
     facet_wrap(vars(fit_method)) +
     theme_bw()
+  
+  return(plot)
 }
 ```
 
@@ -174,14 +177,36 @@ make_coverage_plot <- function(cs){
 ```{r}
 cs %>%
   filter(stringr::str_detect(fit_method, 'ser')) %>%
-  make_coverage_plot()
+  make_coverage_plot(max_size=100)
 ```
 ### Coverage of SERs 95% Credible Sets
+
+We can look at the coverage of all credible sets. But this also includes the credible sets of "null" SERs.
+If $L$ is set larger than the number of actual signals we expect to estimate a few SERs that do not capture any signal, and thus return a very wide credible set.
+Interestingly, for Logistic SuSiE, many of the CSs for these null SERs do NOT include the feature discovered in the non-null SERs. So we see that across all CSs,
+logistic SuSiE seems to have poor coverage!
+
+While we should have a principled way of selecting which SERs to include in the final model (a classick "picking K" problem),
+for now we can get a pretty clear picture of what is going on by filtering down to smaller credible sets. When we filter down to credible sets of 10, or size 1,
+we see that the CSs from linear SuSiE have poor coverage compared to logistic SuSiE. IBSS2M, which can take advantage of a richer variational approximation seems to perform best
+(we'll see below, that it is not achieving good coverage by simply returning the trivial credible set).
 
 ```{r}
 cs %>%
   filter(stringr::str_detect(fit_method, c('susie|ibss'))) %>%
-  make_coverage_plot()
+  make_coverage_plot(max_size=100)
+```
+
+```{r}
+cs %>%
+  filter(stringr::str_detect(fit_method, c('susie|ibss'))) %>%
+  make_coverage_plot(max_size=10)
+```
+
+```{r}
+cs %>%
+  filter(stringr::str_detect(fit_method, c('susie|ibss'))) %>%
+  make_coverage_plot(max_size=2)
 ```
 
 ## Power
