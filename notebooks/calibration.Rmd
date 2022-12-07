@@ -130,7 +130,7 @@ pips %>%
 
 ```{r}
 pips %>%
-  filter(L > 1, stringr::str_detect(fit_method, 'susie')) %>%
+  filter(L > 1, stringr::str_detect(fit_method, 'susie|ibss')) %>%
   make_pip_calibration_plot(facet = 'fit_method')
 ```
 
@@ -210,7 +210,7 @@ plot_colors <- c(
   'ibss_vbc_L5' = 'darkorange1',
   'binsusie_L5' = 'olivedrab3',
   'binsusie2_L5' = 'olivedrab4',
-  'ibss2m_L5' = 'dodgerblue4',
+  'ibss2m_L5' = 'brown3',
   'linear_susie_L5' =  'royalblue4'
 )
 ```
