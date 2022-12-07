@@ -197,7 +197,7 @@ plots <- pips  %>%
   group_by(X_name) %>%
   group_map(~make_power_fdr_plot(.x, color=plot_colors))
 
-purrr::lift_dl(cowplot::plot_grid)(plots, ncol=3)
+purrr::lift_dl(cowplot::plot_grid)(plots)
 ```
 
 
@@ -228,17 +228,8 @@ plots <- pips  %>%
   group_by(X_name) %>%
   group_map(~make_power_fdr_plot(.x, color=plot_colors))
 
-purrr::lift_dl(cowplot::plot_grid)(plots, ncol=3)
+purrr::lift_dl(cowplot::plot_grid)(plots)
 ```
-
-```{r}
-plots <- pips %>%
-  group_by(X_name) %>%
-  group_map(~make_power_fdr_plot(.x, colors=plot_colors))
-
-plots
-```
-
 
 
 ```{r}
