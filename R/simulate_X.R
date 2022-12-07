@@ -7,8 +7,7 @@ make_X_binary_spec <- function(){
     ~X_name, ~X_fun, ~X_args, ~X_seed,
     'X_bin_strong', 'sim_X_sparse', list(n=500, p=100, pi1=0.1, p_flip=0.02), 3,
     'X_bin_medium', 'sim_X_sparse', list(n=500, p=100, pi1=0.1, p_flip=0.1), 4,
-    'X_bin_weak', 'sim_X_sparse', list(n=500, p=100, pi1=0.1, p_flip=0.5), 5,
-    'X_c2_random_1k', 'make_X_c2_random_1k', list(dense=T), 1
+    'X_bin_weak', 'sim_X_sparse', list(n=500, p=100, pi1=0.1, p_flip=0.5), 5
   ) %>%
     mutate(X_sym = rlang::syms(X_fun))
   return(X_spec)

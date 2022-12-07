@@ -94,7 +94,7 @@ make_pip_calibration_plot <- function(pips, facet = 'fit_method'){
 pips <- tar_read(constant_pips)
 pips <- pips %>% 
   unnest_longer(c(pip, causal)) %>%
-  select(y_name, fit_method, L, pip, causal)
+  select(y_name, fit_method, X_name, L, pip, causal)
 ```
 
 ### Calibration of SERs uner $L=1$ simulations
@@ -136,10 +136,10 @@ pips %>%
 ## Credible Sets
 
 ```{r}
-tar_load(constant_cs)
+cs <- tar_read(constant_cs)
 
 # 1 row, 1 simulation
-cs <- half_normal_cs %>%
+cs <- cs %>%
   hoist(score_cs, cs='cs') %>%
   unnest_wider(sims) %>%
   unnest_longer(everything())
@@ -147,8 +147,8 @@ cs <- half_normal_cs %>%
 # 1 row, 1 credible set
 cs <- cs %>%
   unnest_longer(cs) %>%
-  hoist(cs, 'covered') %>%
-  rowwise() %>% mutate(covered = any(covered))
+  rowwise() %>%
+  mutate(covered = any(cs$covered))
 
 make_coverage_plot <- function(cs){
   coverage_plot_data <- cs %>% 
@@ -160,12 +160,12 @@ make_coverage_plot <- function(cs){
   unnest_wider(y_range) %>%
   ungroup()
   
-coverage_plot_data %>%
-  ggplot(aes(x=as.factor(L), y=y, ymin=ymin, ymax=ymax, color=as.factor(X_name))) +
-  geom_pointrange(position=position_dodge(0.3)) + 
-  geom_hline(yintercept = 0.95, size=0.1) + 
-  facet_wrap(vars(fit_method)) +
-  theme_bw()
+  coverage_plot_data %>%
+    ggplot(aes(x=as.factor(L), y=y, ymin=ymin, ymax=ymax, color=as.factor(X_name))) +
+    geom_pointrange(position=position_dodge(0.3)) + 
+    geom_hline(yintercept = 0.95, size=0.1) + 
+    facet_wrap(vars(fit_method)) +
+    theme_bw()
 }
 ```
 
@@ -224,8 +224,9 @@ pips %>%
   ggplot(aes(d=causal, m = pip, color=fit_method)) +
   plotROC::geom_roc(n.cuts = 0, size.point=1, size=0.5) + 
   scale_color_manual(values=colors) +
-  xlim(0, 0.1) +
-  ylim(0, 0.5)
+  xlim(0, 0.05) +
+  ylim(0, 1.0) +
+  facet_wrap(vars(X_name))
 ```
 
 
@@ -240,7 +241,8 @@ pips %>%
   plotROC::geom_roc(n.cuts = 0, size.point=1, size=0.5) + 
   scale_color_manual(values=colors) +
   xlim(0, 0.1) +
-  ylim(0, 0.75)
+  ylim(0, 1.0) +
+  facet_wrap(vars(X_name))
 ```
 
 ```{r}
