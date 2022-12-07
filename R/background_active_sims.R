@@ -81,7 +81,11 @@ make_constant_spec <- function(){
 }
 
 constant_sim_target <- list(
-  tar_target(constant_spec, make_constant_spec()),
+  tar_target(
+    constant_spec, 
+    make_constant_spec() %>%
+      filter(!(str_detect(X_name, 'c2') & str_detect(fit_method, 'ibss2m')))
+  ),
   tar_target(
     constant_fits, fit_from_spec(constant_spec),
     pattern = map(constant_spec)
