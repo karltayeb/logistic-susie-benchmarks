@@ -147,8 +147,9 @@ yusha_example_targets <- list(
 
 # All targets -------
 list(
+  make_X_targets(),
   half_normal_target,
-  background_active_target,
+  constant_sim_target,
   website
 )
 

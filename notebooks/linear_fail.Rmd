@@ -14,12 +14,8 @@ library(purrr)
 library(tictoc)
 source('R/background_active_sims.R')
 
-set.seed(1)
-X <- gseasusie::load_msigdb_geneset_x('C2')$X
-X <- X[, sample(dim(X)[2], 1000)]
-X <- X[BiocGenerics::rowSums(X)>5,]
-
-sim <- sim_y_ba(as.matrix(X), -10, 0, L=1)
+X <- tar_read(X_c2_random_1k)
+sim <- sim_y_constant(as.matrix(X), -10, 0, L=1)
 fit <- susieR::susie(X, sim$y)
 fit.logistic <- xfun::cache_rds(logisticsusie::binsusie(X, sim$y, max_iter = 50))
 ```
