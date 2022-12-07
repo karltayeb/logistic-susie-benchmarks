@@ -196,9 +196,7 @@ pips %>%
 ```{r}
 pips %>% 
   filter(stringr::str_detect(fit_method, c('ser'))) %>% 
-  make_power_fdr_plot(colors=plot_colors) +
-  xlim(0, 0.25) +
-  ylim(0, 0.15)
+  make_power_fdr_plot(colors=plot_colors)
 ```
 
 
