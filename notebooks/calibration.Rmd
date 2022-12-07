@@ -53,6 +53,7 @@ We fit logistic SuSiE with the global variational approximation, IBSS, and IBSS2
 library(dplyr)
 library(tidyr)
 library(targets)
+library(ggplot2)
 ```
 
 ```{r}
@@ -91,8 +92,7 @@ make_pip_calibration_plot <- function(pips, facet = 'fit_method'){
 
 ```{r}
 # get pips
-pip_target <- paste0(params$sim, '_pips')
-pips <- tar_read_raw(pip_target)
+pips <- tar_read(half_normal_pips)
 pips <- pips %>% 
   unnest_longer(c(pip, causal)) %>%
   select(y_name, fit_method, L, pip, causal)

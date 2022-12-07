@@ -2,7 +2,7 @@
 
 single_half_normal_sim <- function(X, beta0, beta_sigma, L){
   # simulate across multiple settings
-  reps <- 1:25
+  reps <- 1:20
 
   # generate simulations
   sims <- tidyr::crossing(beta0=beta0, beta_sigma=beta_sigma, L = L, rep=reps) %>%
