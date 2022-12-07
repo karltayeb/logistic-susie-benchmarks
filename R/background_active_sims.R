@@ -3,6 +3,8 @@
 # all other genes are observed at the background rate
 # for multiple active gene sets, just use the union of these gene sets
 
+sigmoid <- logisticsusie:::sigmoid
+
 sim_y_constant <- function(X, background, active, L, N=1){
   n <- dim(X)[1]
   p <- dim(X)[2]

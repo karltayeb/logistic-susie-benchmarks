@@ -17,10 +17,11 @@ source('R/background_active_sims.R')
 X <- tar_read(X_c2_random_1k)
 sim <- sim_y_constant(as.matrix(X), -10, 0, L=1)
 fit <- susieR::susie(X, sim$y)
-fit.logistic <- xfun::cache_rds(logisticsusie::binsusie(X, sim$y, max_iter = 50))
+fit.logistic <- logisticsusie::binsusie(X, sim$y, max_iter = 50)
 ```
 
-We see that the logistic model correctly selects the correct gene set. In contrast the linear model seems to fail spectacularly. By all accounts this is an "easy" problem. There is one strong enrichment signal.
+We see that the logistic model correctly selects the correct gene set. In contrast the linear model seems to fail spectacularly. By all accounts this is an "easy" problem. There is one strong enrichment signal, which linear SuSiE identifies. However, it also includes many erroneous signals.
+
 
 ```{r}
 plot.pip <- function(sim, model, ...){
@@ -33,11 +34,14 @@ plot.pip(sim, fit, main='Linear')
 plot.pip(sim, fit.logistic, main='Logistic')
 ```
 
+
 Upon closer inspection we see that several of the false positive gene sets don't have any overlap with the gene list $y$.
-Instead, they 
+Instead, they select gene sets that overlap the $S \setminus y$ (where $S$ is the causal gene set and $y$ is the set of genes in the gene list), or more specific gene sets so that the model can shrink the effect estimate for $b_S$, and thus minimize the error incurred by observations in $S \setminus y$.
+
+While the effect sizes are small, and the estimated prior variances are small we see that SuSiE has pretty large BFs for all the SERs. Of course, the SER capturing the causal gene set has the largest BF, however, we also see rather enormous BFs for the other SERs as well.
 
 ```{r}
-lin_select <- which(fit$pip > 0.9)
+lin_select <- unlist(fit$sets$cs)
 fp <- setdiff(lin_select, sim$idx)
 
 image(cor(as.matrix(X[, c(sim$idx, fp)])))
@@ -45,13 +49,55 @@ image(cor(as.matrix(X[, c(sim$idx, fp)])))
 # overlap with y
 sim$y %*% X[,c(sim$idx, fp)]
 
-# overlap with x \ y
+# overlap with S \ y
 (X[, sim$idx] - sim$y) %*% X[, c(sim$idx, fp)]
 
 # strong evidence for each effect (large BF)
 # but small effects (first effect is the true effect, order of magniture larger)
-fit$lbf
 rowSums(fit$alpha * fit$mu)
+fit$lbf
+fit$V
+```
+
+
+### Different choices of scaling/centering do not resolve the issue
+
+```{r}
+fit_scaled <- susieR::susie(X %>% scale(), sim$y, standardize = F)
+fit_centered <- susieR::susie(X %>% scale(center = T, scale = F), sim$y, standardize = F)
+fit_unscaled <- susieR::susie(X, sim$y, standardize = F)
+```
+
+
+```{r}
+par(mfrow=c(1,3))
+plot.pip(sim, fit_scaled, main='Linear')
+plot.pip(sim, fit_centered, main='Linear')
+plot.pip(sim, fit_centered, main='Linear')
+```
+
+
+### Other linear variable selection methods
+
+Sparse linear regression methods like lasso and elastic-net don't fail the way SuSiE did here. For lasso, the model that minimized CV loss has selects the correct component. For elastic net, the solution that minimized CV loss had 4 variables, but the `1se` solution selected only the correct gene set. 
+
+```{r}
+lasso_cv <- glmnet::cv.glmnet(X, sim$y, alpha=1)
+plot(lasso_cv)
+
+lasso_selected <- which(coef(lasso_cv, 'lambda.min')[-1,1] > 0)
+lasso_selected
+```
+
+```{r}
+en_cv <- glmnet::cv.glmnet(X, sim$y, alpha=0.5)
+plot(en_cv)
+
+en_selected <- which(coef(en_cv, 'lambda.min')[-1,1] > 0)
+en_selected
+
+en_selected <- which(coef(en_cv, 'lambda.1se')[-1,1] > 0)
+en_selected
 ```
 
 

@@ -3,4 +3,6 @@
 .Rdata
 .httr-oauth
 .DS_Store
-_targets/meta/meta
+cache/*
+
+_targets/meta/
