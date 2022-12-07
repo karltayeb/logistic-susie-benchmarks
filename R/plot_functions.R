@@ -82,7 +82,11 @@ compute_power_fdr_thresh <- function(pip, causal){
   return(list(power=power, fdr=fdr, thresh=thresh))
 }
 
-make_power_fdr_plot <- function(pips, colors){
+#' Plot power vs FDP for each fit_metho
+#' @params pips a data frame with columns fit_method, pip, causal
+#' @params colors a list matching fit_methdods to colors
+#' @params max_fdr the maximum FDR level to show in the plot (ie xlim)
+make_power_fdr_plot <- function(pips, colors, max_fdr=0.25){
   methods <- unique(pips$fit_method)
   colors <- colors[methods]
 
@@ -92,11 +96,16 @@ make_power_fdr_plot <- function(pips, colors){
     unnest_wider(pft) %>%
     unnest_longer(c(power, fdr, thresh))
 
+  max_power <- plot_data %>%
+    filter(fdr <= max_fdr) %>%
+    {max(.$power)}
+
   plot <- plot_data %>%
     ggplot(aes(x=fdr, y=power, color=fit_method)) + 
     geom_path() + 
     theme_bw() +
-    scale_color_manual(values=colors)
+    scale_color_manual(values=colors) +
+    xlim(0, max_fdr) + ylim(0, max_power)
   return(plot)
 }
 
