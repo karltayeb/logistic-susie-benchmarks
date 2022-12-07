@@ -61,6 +61,10 @@ pips <- tar_read(constant_pips)
 pips <- pips %>% 
   unnest_longer(c(pip, causal)) %>%
   select(y_name, fit_method, X_name, L, pip, causal)
+
+
+X_order <- unique(pips$X_name)[c(3,1,2)]
+pips$X_name <- factor(pips$X_name, levels = X_order)
 ```
 
 ### Calibration of SERs uner $L=1$ simulations
@@ -187,6 +191,15 @@ pips %>%
   make_power_fdr_plot(colors=plot_colors)
 ```
 
+```{r}
+plots <- pips  %>%
+  filter(stringr::str_detect(fit_method, c('ser'))) %>% 
+  group_by(X_name) %>%
+  group_map(~make_power_fdr_plot(.x, color=plot_colors))
+
+purrr::lift_dl(cowplot::plot_grid)(plots, ncol=3)
+```
+
 
 ```{r}
 methods <- unique(pips$fit_method)
@@ -208,6 +221,25 @@ pips %>%
   filter(stringr::str_detect(fit_method, c('susie|ibss'))) %>% 
   make_power_fdr_plot(colors=plot_colors)
 ```
+
+```{r}
+plots <- pips  %>%
+  filter(stringr::str_detect(fit_method, c('susie|ibss'))) %>% 
+  group_by(X_name) %>%
+  group_map(~make_power_fdr_plot(.x, color=plot_colors))
+
+purrr::lift_dl(cowplot::plot_grid)(plots, ncol=3)
+```
+
+```{r}
+plots <- pips %>%
+  group_by(X_name) %>%
+  group_map(~make_power_fdr_plot(.x, colors=plot_colors))
+
+plots
+```
+
+
 
 ```{r}
 make_size_plot <- function(cs){
