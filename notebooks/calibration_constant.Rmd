@@ -107,29 +107,11 @@ pips %>%
   make_pip_calibration_plot(facet = 'fit_method')
 ```
 
-### Calibration of SuSiEs under $L=1$ simulations
+### Calibration of SuSiEs PIPs under $L=1$ simulations
 
 ```{r}
 pips %>%
-  filter(L == 1, stringr::str_detect(fit_method, 'susie')) %>%
-  make_pip_calibration_plot(facet = 'fit_method')
-```
-
-
-### Calibration of SERs under $L>1$ simulations
-
-
-```{r}
-pips %>%
-  filter(L > 1, stringr::str_detect(fit_method, 'ser')) %>%
-  make_pip_calibration_plot(facet = 'fit_method')
-```
-
-### Calibration of SuSiEs under $L>1$ simulations
-
-```{r}
-pips %>%
-  filter(L > 1, stringr::str_detect(fit_method, 'susie|ibss')) %>%
+  filter(L == 1, stringr::str_detect(fit_method, 'susie|ibss')) %>%
   make_pip_calibration_plot(facet = 'fit_method')
 ```
 
