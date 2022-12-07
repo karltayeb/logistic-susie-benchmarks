@@ -150,6 +150,7 @@ cs %>%
   make_coverage_plot()
 ```
 
+
 ## Power
 
 ```{r}
@@ -194,6 +195,12 @@ pips %>%
   ylim(0, 0.5)
 ```
 
+```{r}
+pips %>% 
+  filter(stringr::str_detect(fit_method, c('ser'))) %>% 
+  make_power_fdr_plot(colors=plot_colors)
+```
+
 
 ```{r}
 methods <- unique(pips$fit_method)
@@ -207,6 +214,12 @@ pips %>%
   scale_color_manual(values=colors) +
   xlim(0, 0.1) +
   ylim(0, 0.75)
+```
+
+```{r}
+pips %>% 
+  filter(stringr::str_detect(fit_method, c('susie|ibss'))) %>% 
+  make_power_fdr_plot(colors=plot_colors)
 ```
 
 ```{r}

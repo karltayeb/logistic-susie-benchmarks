@@ -181,6 +181,12 @@ pips %>%
   facet_wrap(vars(X_name))
 ```
 
+```{r}
+pips %>% 
+  filter(stringr::str_detect(fit_method, c('ser'))) %>% 
+  make_power_fdr_plot(colors=plot_colors)
+```
+
 
 ```{r}
 methods <- unique(pips$fit_method)
@@ -195,6 +201,12 @@ pips %>%
   xlim(0, 0.1) +
   ylim(0, 1.0) +
   facet_wrap(vars(X_name))
+```
+
+```{r}
+pips %>% 
+  filter(stringr::str_detect(fit_method, c('susie|ibss'))) %>% 
+  make_power_fdr_plot(colors=plot_colors)
 ```
 
 ```{r}

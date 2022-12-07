@@ -50,3 +50,53 @@ make_coverage_plot <- function(cs, max_size=1e10){
   
   return(plot)
 }
+
+
+# PIPs Power vs FDR
+compute_power_fdr_thresh <- function(pip, causal){
+  n_causal <- sum(causal)
+
+  sorter <- order(pip, decreasing = T)
+  sorted_pips <- pip[sorter]
+  sorted_causal <- causal[sorter]
+  n <- 1:length(sorted_causal)
+
+  power <- cumsum(sorted_causal) / n_causal
+  fdr <- (n - cumsum(sorted_causal)) / n
+  thresh <- sorted_pips
+
+  # prune
+  include <- logical(length(thresh))
+  include[1] <- T
+  last <- 1
+  for(i in 2:length(thresh)){
+    if(((fdr[i] - fdr[last]) > 0.005) | ((power[i] - power[last]) > 0.005)){
+      include[i] <- T
+      last <- i
+    }
+  }
+
+  power <- power[include]
+  fdr <- fdr[include]
+  thresh <- thresh[include]
+  return(list(power=power, fdr=fdr, thresh=thresh))
+}
+
+make_power_fdr_plot <- function(pips, colors){
+  methods <- unique(pips$fit_method)
+  colors <- plot_colors[methods]
+
+  plot_data <- pips %>%
+    group_by(fit_method) %>%
+    summarise(pft = list(compute_power_fdr_thresh(pip, causal))) %>%
+    unnest_wider(pft) %>%
+    unnest_longer(c(power, fdr, thresh))
+
+  plot <- plot_data %>%
+    ggplot(aes(x=fdr, y=power, color=fit_method)) + 
+    geom_path() + 
+    theme_bw() +
+    scale_color_manual(values=colors)
+  return(plot)
+}
+
