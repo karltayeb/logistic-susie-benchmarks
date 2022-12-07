@@ -3,8 +3,6 @@ title: "PIP Calibration"
 author: "Karl Tayeb"
 date: "2022-12-01"
 output: html_document
-params:
-  sim: 'half_normal'
 ---
 
 ```{r setup, include=FALSE}

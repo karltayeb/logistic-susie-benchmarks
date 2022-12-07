@@ -84,7 +84,7 @@ compute_power_fdr_thresh <- function(pip, causal){
 
 make_power_fdr_plot <- function(pips, colors){
   methods <- unique(pips$fit_method)
-  colors <- plot_colors[methods]
+  colors <- colors[methods]
 
   plot_data <- pips %>%
     group_by(fit_method) %>%
