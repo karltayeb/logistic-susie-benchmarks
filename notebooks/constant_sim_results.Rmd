@@ -1,0 +1,159 @@
+---
+title: "Constant Simulation Results"
+author: "Karl Tayeb"
+date: "2022-12-01"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(error = TRUE)
+```
+
+```{r imports}
+library(dplyr)
+library(tidyr)
+library(targets)
+library(ggplot2)
+```
+
+```{r load_data}
+# get pips
+pips <- tar_read(constant_pips)
+X_order <- unique(pips$X_name)[c(3,1,2)]
+pips$X_name <- factor(pips$X_name, levels = X_order)
+
+cs <- tar_read(constant_cs)
+cs$X_name <- factor(cs$X_name, levels = X_order) 
+```
+
+## Overview
+
+We assess the power and calibration of PIPs, as well as coverage of 95% credible sets, for various SERs and SuSiEs.
+
+### Simulations 
+
+We simulate data under the model
+
+$$
+y_i \sim Bernoulli(p_i) \\
+p_i = (1 + \exp(\beta_0 +x_i^T \beta))^{-1} \\
+\beta \sim \text{SuSiE}(L, \sigma_{b}^2)
+$$
+
+We vary the prior variance of the non-zero effects to have  $\mathbb E b = 0.2, 0.4, 0.6, 0.8, 1.0, 2.0$
+The intercept $\beta_0$ gives the prior odds of $y_i = 1$, which we set to $\beta_0 = -2, -1, 0.5, 1$
+We simulate under the single effect case $L=1$, and also multiple effects $L=3$
+We replicate each simulation scenario 20 times.
+
+
+We repeat these simulations with different design matrices $X$. In all cases we simulate $n=1000$ observations and $p=50$ covariates. We control the correlation structure between the $p$ covariates so that covariates are weakly, moderately, and strongly correlated. In all case presented here we standardize $X$ before model fitting to have mean 0 and variance 1. 
+
+```
+  lengthscales <- c(1, 10, 50)
+  beta0 <- c(-2, -1, -.5, 0)
+  beta_sigma <- c(0.2, 0.4, 0.6, 0.8, 1.0, 2.0) / sqrt(2/pi)
+  L <- c(1, 3) #c(1, 3, 5)
+  reps <-  1:20
+```
+
+### Methods Assessed
+
+We assess the performance of the linear SER and several approximations to the logistic SER.
+We also assess the performance of several SuSiE variants. As a baseline we run linear SuSiE.
+We fit logistic SuSiE with the global variational approximation, IBSS, and IBSS2M.
+
+## SERs
+### PIP Calibration
+Calibration of PIPs in the single-effect simulations
+
+```{r}
+pips %>%
+  filter_ser() %>%
+  filter(L==1) %>%
+  make_pip_calibration_plot() +
+  facet_wrap(vars(fit_method))
+
+pips %>%
+  filter_ser() %>%
+  filter(L>1) %>%
+  make_pip_calibration_plot() +
+  facet_wrap(vars(fit_method))
+```
+
+### FDP vs Power
+```{r}
+pips %>%
+  filter_ser() %>%
+  filter(L==1) %>%
+  make_fdp_plot()
+
+pips %>%
+  filter_ser() %>%
+  filter(L>1) %>%
+  make_fdp_plot()
+```
+
+### 95% credible set coverage 
+```{r}
+cs %>%
+  filter_ser() %>%
+  make_cs_coverage_plot() +
+  facet_wrap(vars(X_name))
+```
+
+```{r}
+cs %>%
+  filter_ser() %>%
+  make_cs_coverage_plot(max_cs_size = 25) +
+  facet_wrap(vars(X_name))
+```
+
+
+## SuSiE
+### PIP Calibration
+Calibration of PIPs in the single-effect simulations
+
+```{r}
+pips %>%
+  filter_susie() %>%
+  filter(L==1) %>%
+  make_pip_calibration_plot() +
+  facet_wrap(vars(fit_method))
+
+pips %>%
+  filter_susie() %>%
+  filter(L>1) %>%
+  make_pip_calibration_plot() +
+  facet_wrap(vars(fit_method))
+```
+
+### FDP vs Power
+```{r}
+pips %>%
+  filter_susie() %>%
+  filter(L==1) %>%
+  make_fdp_plot()
+
+pips %>%
+  filter_susie() %>%
+  filter(L>1) %>%
+  make_fdp_plot()
+```
+
+### 95% credible set coverage 
+```{r}
+cs %>%
+  filter_susie() %>%
+  make_cs_coverage_plot() +
+  facet_wrap(vars(X_name))
+```
+
+```{r}
+cs %>%
+  filter_susie() %>%
+  make_cs_coverage_plot(max_cs_size = 25) +
+  facet_wrap(vars(X_name))
+```
