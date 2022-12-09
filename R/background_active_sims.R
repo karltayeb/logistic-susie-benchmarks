@@ -37,9 +37,9 @@ sim_constant <- function(X, background, active, L){
 }
 
 make_constant_sim_spec <- function(){
-  background = c(-10)
+  background = c(-10, -4, -2)
   active = c(-1, -0.5, 0)
-  L = c(1)
+  L = c(1, 2, 3)
 
   constant_spec <- tidyr::crossing(background=background, active=active, L=L) %>%
     rowwise() %>%
