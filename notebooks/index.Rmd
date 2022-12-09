@@ -1,6 +1,10 @@
 # Logistic SuSiE Benchmarks
 
-## Links
+## Demonstrations
+* [Linear SuSiE can fail dramatically](linear_fail.html)
+* [The naive variational approximation is not well suited for variable selection](logistic_fail.html)
+
+## Simulation Results
 Click links below for comparison of different logistic SERs, and logistic SuSiE approaches.
-- [Half normal effects, continuous X](half_normal_sim_results.html)
-- [Constant effects, discrete/binary X](constant_sim_results.html)
+* [Half normal effects, continuous X](half_normal_sim_results.html)
+* [Constant effects, discrete/binary X](constant_sim_results.html)

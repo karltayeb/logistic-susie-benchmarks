@@ -57,9 +57,6 @@ library(ggplot2)
 ```{r}
 # get pips
 pips <- tar_read(half_normal_pips)
-pips <- pips %>% 
-  unnest_longer(c(pip, causal)) %>%
-  select(y_name, fit_method, L, pip, causal)
 ```
 
 ### Calibration of SERs uner $L=1$ simulations
@@ -68,7 +65,8 @@ Calibration of PIPs in the single-effect simulations
 
 ```{r}
 pips %>%
-  filter(L == 1, stringr::str_detect(fit_method, 'ser')) %>%
+  filter_ser() %>%
+  filter(L == 1) %>%
   make_pip_calibration_plot(facet = 'fit_method')
 ```
 
@@ -76,17 +74,18 @@ pips %>%
 
 ```{r}
 pips %>%
-  filter(L == 1, stringr::str_detect(fit_method, 'susie')) %>%
+  filter_susie() %>%
+  filter(L == 1) %>%
   make_pip_calibration_plot(facet = 'fit_method')
 ```
 
 
 ### Calibration of SERs under $L>1$ simulations
 
-
 ```{r}
 pips %>%
-  filter(L > 1, stringr::str_detect(fit_method, 'ser')) %>%
+  filter_ser() %>%
+  filter(L > 1) %>% 
   make_pip_calibration_plot(facet = 'fit_method')
 ```
 
@@ -94,8 +93,9 @@ pips %>%
 
 ```{r}
 pips %>%
-  filter(L > 1, stringr::str_detect(fit_method, 'susie|ibss')) %>%
-  make_pip_calibration_plot(facet = 'fit_method')
+  filter_susie() %>%
+  filter(L > 1) %>%
+  make_pip_calibration_plot(facet = 'fit_method') + facet_grid(rows=vars(X_name), cols=vars(fit_method))
 ```
 
 ## Credible Sets
@@ -152,31 +152,6 @@ cs %>%
 ## Power
 
 ```{r}
-plot_colors <- c(
-  'glm_ser' = 'aquamarine1', 
-  'glm_ser2' = 'aquamarine3', 
-  'uvb_ser' = 'brown1', 
-  'uvb_ser2' = 'brown3', 
-  'vb_ser' = 'darkgoldenrod1', 
-  'vb_ser2' = 'darkgoldenrod3',
-  'vb_ser_corrected' = 'darkorange1',
-  'veb_ser' = 'darkorchid1',
-  'quad_ser' = 'deeppink1',
-  'uvb_ser_re' = 'palevioletred3',
-  'linear_ser' = 'royalblue4',
-  
-  'ibss_glm_L5' = 'aquamarine1', 
-  'ibss_glm2_L5' = 'aquamarine3', 
-  'ibss_uvb_L5' = 'brown1', 
-  'ibss_uvb2_L5' = 'brown3', 
-  'ibss_vb_L5' = 'darkgoldenrod1', 
-  'ibss_vb2_L5' = 'darkgoldenrod3',
-  'ibss_vbc_L5' = 'darkorange1',
-  'binsusie_L5' = 'olivedrab3',
-  'binsusie2_L5' = 'olivedrab4',
-  'ibss2m_L5' = 'brown3',
-  'linear_susie_L5' =  'royalblue4'
-)
 ```
 
 ```{r}

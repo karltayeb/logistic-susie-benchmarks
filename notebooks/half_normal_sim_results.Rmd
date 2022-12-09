@@ -5,6 +5,11 @@ date: "2022-12-01"
 output: 
   html_document:
     code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: true
 ---
 
 ```{r setup, include=FALSE}
@@ -69,13 +74,17 @@ We fit logistic SuSiE with the global variational approximation, IBSS, and IBSS2
 ### PIP Calibration
 Calibration of PIPs in the single-effect simulations
 
+#### $L=1$
 ```{r}
 pips %>%
   filter_ser() %>%
   filter(L==1) %>%
   make_pip_calibration_plot() +
   facet_wrap(vars(fit_method))
+```
 
+#### $L > 1$
+```{r}
 pips %>%
   filter_ser() %>%
   filter(L>1) %>%
@@ -84,12 +93,17 @@ pips %>%
 ```
 
 ### FDP vs Power
+
+#### $L=1$
 ```{r}
 pips %>%
   filter_ser() %>%
   filter(L==1) %>%
   make_fdp_plot()
+```
 
+#### $L > 1$
+```{r}
 pips %>%
   filter_ser() %>%
   filter(L>1) %>%
@@ -97,6 +111,8 @@ pips %>%
 ```
 
 ### 95% credible set coverage 
+
+#### All credible sets
 ```{r}
 cs %>%
   filter_ser() %>%
@@ -104,6 +120,7 @@ cs %>%
   facet_wrap(vars(X_name))
 ```
 
+#### CSs with $\leq 25$ features
 ```{r}
 cs %>%
   filter_ser() %>%
@@ -116,13 +133,18 @@ cs %>%
 ### PIP Calibration
 Calibration of PIPs in the single-effect simulations
 
+#### $L=1$
 ```{r}
 pips %>%
   filter_susie() %>%
   filter(L==1) %>%
   make_pip_calibration_plot() +
   facet_wrap(vars(fit_method))
+```
 
+
+#### $L>1$
+```{r}
 pips %>%
   filter_susie() %>%
   filter(L>1) %>%
@@ -131,12 +153,17 @@ pips %>%
 ```
 
 ### FDP vs Power
+
+#### $L=1$
 ```{r}
 pips %>%
   filter_susie() %>%
   filter(L==1) %>%
   make_fdp_plot()
+```
 
+#### $L > 1$
+```{r}
 pips %>%
   filter_susie() %>%
   filter(L>1) %>%
@@ -144,6 +171,8 @@ pips %>%
 ```
 
 ### 95% credible set coverage 
+
+#### All CSs
 ```{r}
 cs %>%
   filter_susie() %>%
@@ -151,6 +180,7 @@ cs %>%
   facet_wrap(vars(X_name))
 ```
 
+#### CSs with $\leq 25$ features
 ```{r}
 cs %>%
   filter_susie() %>%
