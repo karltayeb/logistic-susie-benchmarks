@@ -6,5 +6,6 @@
 
 ## Simulation Results
 Click links below for comparison of different logistic SERs, and logistic SuSiE approaches.
+
 * [Half normal effects, continuous X](half_normal_sim_results.html)
 * [Constant effects, discrete/binary X](constant_sim_results.html)
