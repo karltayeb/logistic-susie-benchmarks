@@ -1,2 +1,3 @@
-source("renv/activate.R")
 library(targets)
+reticulate::use_condaenv('jax')
+

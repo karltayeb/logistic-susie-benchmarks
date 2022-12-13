@@ -22,5 +22,6 @@ plot_colors <- c(
   'binsusie_L5' = 'olivedrab3',
   'binsusie2_L5' = 'olivedrab4',
   'ibss2m_L5' = 'brown3',
+  'ibss2m_L5_jax' = 'brown4',
   'linear_susie_L5' =  'royalblue4'
 )
