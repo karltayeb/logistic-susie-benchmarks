@@ -25,7 +25,7 @@ library(ggplot2)
 ```
 
 ```{r load_data}
-# get pips
+# get pipsi
 pips <- tar_read(constant_pips)
 X_order <- unique(pips$X_name)[c(3,1,2)]
 pips$X_name <- factor(pips$X_name, levels = X_order)

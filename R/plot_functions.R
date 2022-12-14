@@ -149,14 +149,14 @@ make_fdp_plot <- function(pips){
 # CS Coverage ---------
 flatten_cs <- function(cs){
   # 1 row, 1 simulation
-  cs <- cs %>%
-    hoist(score_cs, cs='cs') %>%
-    unnest_wider(sims) %>%
-    unnest_longer(everything())
+  # cs <- cs %>%
+  #   hoist(score_cs, cs='cs') %>%
+  #   unnest_wider(sims) %>%
+  #   unnest_longer(everything())
 
   # 1 row, 1 credible set
   cs <- cs %>%
-    unnest_longer(cs) %>%
+    unnest_longer(c(cs, lbf)) %>%
     rowwise() %>%
     mutate(covered = any(cs$covered), cs_size=cs$size)
 

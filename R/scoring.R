@@ -1,53 +1,38 @@
 # Scoring -------
 
-# compute CSs for a single simulation group
-score_cs_row <- function(sim, fit){
-  res <- bind_cols(sim, fit) %>%
-    rowwise() %>%
-    mutate(cs = list(logisticsusie:::get_all_cs2(fit$alpha))) %>%
-    mutate(cs = list(logisticsusie:::get_all_coverage(cs, sim$idx))) %>%
-    select(cs) %>% ungroup()
+make_scored_cs <- function(alpha, idx){
+  cs <- logisticsusie:::get_all_cs2(alpha) %>%
+    logisticsusie:::get_all_coverage(idx)
+  return(cs)
 }
 
-# compute CSs for multiple simulation groups in a tibble
+get_lbfs <- function(fit_method, fit){
+  if(stringr::str_detect(fit_method, 'ser')){
+    lbf <- fit$lbf_model
+  } else{
+    lbf <- fit$lbf
+  }
+  return(lbf)
+}
+
 score_cs <- function(fits){
-  scored_cs <- fits %>%
+  # 1 row 1 simulation
+  tmp <- fits %>%
     rowwise() %>%
     mutate(fits = fit$fit) %>%
     select(fit_method, X_name, y_name, sims, fits) %>%
-    mutate(score_cs = list(score_cs_row(sims, fits))) %>%
-    select(-c(fits))
-  return(scored_cs)
-}
+    unnest_wider(c(sims, fits)) %>%
+    unnest_longer(c(sim, fit))
 
-# compute empirical coverage of each credible set
-score_cs_coverage <- function(score_cs){
-  # 1 row, 1 simulation
-  score_cs2 <- score_cs %>%
-    hoist(score_cs, cs='cs') %>%
-    unnest_wider(sims) %>%
-    unnest_longer(everything())
+  # score each simulation
+  tmp2 <- tmp %>%
+    rowwise() %>%
+    mutate(
+      cs = list(make_scored_cs(fit$alpha, sim$idx)),
+      lbf = list(get_lbfs(fit_method, fit))
+    )
 
-  # 1 row, 1 credible set
-  score_cs3 <- score_cs2 %>%
-    unnest_longer(cs) %>%
-    hoist(cs, 'covered') %>%
-    rowwise() %>% mutate(covered = any(covered))
-
-  # coverage of all credible sets
-  # score_cs3 %>%
-  #   group_by(fit_method, X_name, y_name) %>%
-  #   summarise(empirical_coverage = mean(covered))
-
-  # coverage of non-trivial credible sets
-  # coverage_tbl <- score_cs3 %>%
-  #   hoist(cs, 'size') %>%
-  #   select(fit_method, X_name, y_name, L, covered, size) %>%
-  #   filter(size < 10) %>%
-  #   group_by(fit_method, X_name, y_name) %>%
-  #   summarise(empirical_coverage = mean(covered))
-
-  return(score_cs3)
+  return(tmp2)
 }
 
 #' extract pips and causal status of each feature
