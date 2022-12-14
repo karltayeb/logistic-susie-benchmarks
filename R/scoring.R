@@ -1,11 +1,26 @@
 # Scoring -------
 
-make_scored_cs <- function(alpha, idx){
-  cs <- logisticsusie:::get_all_cs2(alpha) %>%
-    logisticsusie:::get_all_coverage(idx)
+#' Check if a CS covers a particular index
+get_coverage <- function(cs, idx) {
+  cs$covered <- idx %in% cs$cs
+  cs$which_covered <- intersect(idx, cs$cs)
+  names(cs$covered) <- idx
   return(cs)
 }
 
+#' Check if set of indices `idx` in a list of credible sets
+get_all_coverage <- function(css, idx) {
+  purrr::map(css, ~ get_coverage(.x, idx))
+}
+
+#' compute CS and annotate with coverage info
+make_scored_cs <- function(alpha, idx){
+  cs <- logisticsusie:::get_all_cs2(alpha) %>%
+    get_all_coverage(idx)
+  return(cs)
+}
+
+#' extract log Bayes factors from each model fit
 get_lbfs <- function(fit_method, fit){
   if(stringr::str_detect(fit_method, 'ser')){
     lbf <- fit$lbf_model
@@ -15,6 +30,7 @@ get_lbfs <- function(fit_method, fit){
   return(lbf)
 }
 
+#' main credible set function
 score_cs <- function(fits){
   # 1 row 1 simulation
   tmp <- fits %>%
@@ -22,7 +38,9 @@ score_cs <- function(fits){
     mutate(fits = fit$fit) %>%
     select(fit_method, X_name, y_name, sims, fits) %>%
     unnest_wider(c(sims, fits)) %>%
-    unnest_longer(c(sim, fit))
+    unnest_longer(c(sim, fit)) %>%
+    ungroup() %>%
+    mutate(hash = purrr::map_chr(sim, rlang::hash))
 
   # score each simulation
   tmp2 <- tmp %>%
@@ -30,8 +48,8 @@ score_cs <- function(fits){
     mutate(
       cs = list(make_scored_cs(fit$alpha, sim$idx)),
       lbf = list(get_lbfs(fit_method, fit))
-    )
-
+    ) %>%
+    select(-c(fit, sim))
   return(tmp2)
 }
 

@@ -148,18 +148,11 @@ make_fdp_plot <- function(pips){
 
 # CS Coverage ---------
 flatten_cs <- function(cs){
-  # 1 row, 1 simulation
-  # cs <- cs %>%
-  #   hoist(score_cs, cs='cs') %>%
-  #   unnest_wider(sims) %>%
-  #   unnest_longer(everything())
-
   # 1 row, 1 credible set
   cs <- cs %>%
     unnest_longer(c(cs, lbf)) %>%
     rowwise() %>%
-    mutate(covered = any(cs$covered), cs_size=cs$size)
-
+    mutate(covered = any(cs$covered), cs_size=cs$size, which_covered = list(cs$which_covered))
   return(cs)
 }
 
@@ -177,6 +170,60 @@ make_cs_coverage_plot <- function(cs, max_cs_size=1e10){
     theme_bw()
   
   return(plot)
+}
+
+# CS Size ---------
+#' plot cs coverage by cs size
+make_coverage_by_cs_size <- function(cs){
+  cs %>%
+    flatten_cs() %>%
+    mutate(
+      covered = as.numeric(covered),
+      size_bin = cut(cs_size, c(0, 5, 10, 25, 50, 100))
+    ) %>%
+    ggplot(aes(x=size_bin, y=covered, color=fit_method)) +
+    stat_bs_mean(position=position_dodge(0.3)) +
+    geom_hline(yintercept=0.95) +
+    theme_bw()
+}
+
+#' plot cs size on histogram
+make_cs_size_histogram <- function(cs){
+  cs %>%
+    flatten_cs() %>%
+    ggplot(aes(x=cs_size, fill=fit_method)) +
+    geom_histogram() + 
+    facet_wrap(vars(fit_method)) 
+}
+
+scatter2 <- function(data, mapping, ...){
+  ggplot(data=data, mapping = mapping) +
+  geom_point() +
+  geom_abline(yintercept=0, slope=1, color='red') +
+  theme_bw()
+}
+
+bin2 <- function(data, mapping, ...){
+  ggplot(data=data, mapping = mapping) +
+  geom_bin2d() +
+  geom_abline(yintercept=0, slope=1, color='red') +
+  theme_bw()
+}
+
+#' match CSs across simulations and plot between pairs of methods
+make_pairwise_cs_size_plot <- function(cs){
+  # directly plot CSs against eachother
+  pairs <- cs %>%
+    flatten_cs() %>%
+    unnest_longer(which_covered) %>%
+    group_by(fit_method, hash, which_covered) %>%
+    summarize(cs_size = min(cs_size)) %>%
+    ungroup() %>%
+    pivot_wider(names_from=fit_method, values_from=cs_size) %>%
+    select(-c(hash, which_covered))
+
+  pairs %>%
+    GGally::ggpairs(lower = list(continuous = bin2))
 }
 
 # Helpers --------

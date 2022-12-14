@@ -138,6 +138,20 @@ cs %>%
   facet_wrap(vars(X_name))
 ```
 
+#### CS Size Plots
+```{r}
+cs %>% 
+  filter_ser() %>%
+  make_coverage_by_cs_size()
+
+cs %>% 
+  filter_ser() %>%
+  make_cs_size_histogram()
+
+cs %>% 
+  filter_ser() %>%
+  make_pairwise_cs_size_plot()
+```
 
 ## SuSiE
 ### PIP Calibration
@@ -198,4 +212,21 @@ cs %>%
   filter_susie() %>%
   make_cs_coverage_plot(max_cs_size = 25) +
   facet_wrap(vars(X_name))
+```
+
+
+#### CS Size Plots
+
+```{r}
+cs %>% 
+  filter_susie() %>%
+  make_coverage_by_cs_size()
+
+cs %>% 
+  filter_susie() %>%
+  make_cs_size_histogram()
+
+cs %>% 
+  filter_susie() %>%
+  make_pairwise_cs_size_plot()
 ```
