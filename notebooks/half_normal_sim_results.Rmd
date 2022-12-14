@@ -130,7 +130,7 @@ cs %>%
 
 #### CS Size Plots
 
-```{r}
+```{r warning=FALSE}
 cs %>% 
   filter_ser() %>%
   make_coverage_by_cs_size()
