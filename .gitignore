@@ -6,4 +6,5 @@
 cache/*
 
 _targets/meta/
+data/
 .Rprofile
