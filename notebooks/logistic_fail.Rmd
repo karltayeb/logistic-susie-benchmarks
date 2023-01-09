@@ -1,0 +1,151 @@
+---
+title: "Logistic SuSiE Failure"
+author: "Karl Tayeb"
+date: "2022-12-06"
+output: html_document
+---
+
+## Inference in terms of Bayes Factors
+
+The key inferences we want to make when performing variable selection for the single effect regression (SER) can be expressed in terms of univariate Bayes factors of each feature.
+Let ${\bf \pi} = (\pi_1, \dots, \pi_i)$ be the prior probability of selecting each feature. and $BF_i$ the Bayes factor comparing the logistic regression with a normal prior against the null model of no effect. 
+Then we can compute the posterior inclusion probabilities (PIPs) of each feature as
+
+$$
+\text{PIP}_i = \frac{\pi_i BF_i}{\sum_j \pi_j BF_j},
+$$
+
+Second, beyond asking which feature to select, we also want to ask if we need to include the effect at all?
+We can summarize evidence for a single non-zero effect by computing a Bayes factor that compares the SER model against the null model.
+This is easily expressed in terms of the univariate BFs.
+
+$$
+BF_{SER} = 
+\frac{p(y | \beta \neq 0)}{p( y | \beta = 0)} = 
+\sum_j \pi_j \frac{p(y | \beta_j \neq 0)}{p( y | \beta = 0)} = 
+\sum_j \pi_j BF_j
+$$
+
+In order to estimate PIPs well we need to be able to estimate the univariate BFs well up to a scalar.
+Since we normalize by the BFs the scalar comes out in division.
+In order to evaluate model evidence well, we must do a good job of estimating the univariate BFs outright.
+
+The univariate Bayesian logistic regression is easy to deal with. While it is not avaialbe in closed form we are only integrating over a single variable (or perhaps two if we put a prior on the intercept).
+We can efficiently compute the "exact" BFs via quadrature, and obtain posterior summaries from simple Monte-Carlo teqniques.
+However our goal is to perform variable selection in settings where there are an unkown number of effects. Taking a normal approximation to the likelihood benefits us here.
+
+
+1. Key limitations of the naive VB approximation to the SER (and it's extention to SuSiE) are that (1) the variational approximation will result in tighter approximations for some of the univariate BFs than others.
+In particular the variational approximation will favor solutions where the features with the strongest evidence have the tightest bounds.
+Consequently we will inflate PIPs for the features with the strongest evidence of association, and concordantly deflate PIPs with weaker evidence of selection.
+(2) the naive VB will consistently under-estimate $BF_{SER}$, since we get a poor approximation of the univariate BFs for most features.
+Ideally, we would like to use $BF_{SER}$ as a summary of evidence in favor of the SER model.
+
+2. The univariate BF SER (UVB-SER) improves on the issues we face in the naive VB approximation, by getting tighter estimates for all of the univariate BFs. We resolve (1) by optimizing the variaitonal approximation for each feature seperately.
+While it may be challenging to theoretically bound the errror between the approximate BFs achieved through VI and the exact BFs, empirically we show that the quality of the bound is "fairly tight" and "relatively uniform" (TODO: link to that result here).
+This automatically resolves the issue (2). We note that our ability to estimate $BF_{SER}$ well is dependent on how closely we can approximate the exact univariate BFs. The variational approximation gives a lower bound to the exact BF, so we are assured that our esimtate is conservative.
+However, since we are only integrating over a single parameter the variational bound tends to be fairly tight.
+
+3. The variational approximation is convenient for extending to selection of multiple variables.
+While the SER can be solved exactly via numerical techniques, we would quickly run into challenges integrating over the predictions made by $L$ seperate single effects
+(allbeit dealing with and $L$ dimensional integral numerically is not too challenging for moderate $L$).
+Under a variational approximation where (1) the single effects factorize and (2) we use the JJ approximation, the variational approximation, we only need the first and second moments of the predictions at each SER.
+We can effectively incorporate uncertainty of the predictions at $L-1$ other single effects when updating one of them.
+
+
+The purpose of this notebook is to highlight the limitations of the naive VB approximation to SER.
+In particular we show (1) the tendency of the naive VB for logistic SER (VB-SER) to undercover compared to the univariate VB logistic SER (UVB-SER)
+(2) highlight the utility of having good SER level BFs.
+
+```{r}
+library(purrr)
+library(tictoc)
+source('R/background_active_sims.R')
+
+X <- tar_read(X_c2_random_1k)
+sim <- sim_y_constant(as.matrix(X), -10, 0, L=1)
+fit <- susieR::susie(X, sim$y)
+fit.logistic <- logisticsusie::binsusie(X, sim$y, max_iter = 50)
+```
+
+We see that the logistic model correctly selects the correct gene set. In contrast the linear model seems to fail spectacularly. By all accounts this is an "easy" problem. There is one strong enrichment signal, which linear SuSiE identifies. However, it also includes many erroneous signals.
+
+
+```{r}
+plot.pip <- function(sim, model, ...){
+  plot(model$pip, ...)
+  points(sim$idx, model$pip[sim$idx], col='red')
+}
+
+par(mfrow=c(1,2))
+plot.pip(sim, fit, main='Linear')
+plot.pip(sim, fit.logistic, main='Logistic')
+```
+
+
+Upon closer inspection we see that several of the false positive gene sets don't have any overlap with the gene list $y$.
+Instead, they select gene sets that overlap the $S \setminus y$ (where $S$ is the causal gene set and $y$ is the set of genes in the gene list), or more specific gene sets so that the model can shrink the effect estimate for $b_S$, and thus minimize the error incurred by observations in $S \setminus y$.
+
+While the effect sizes are small, and the estimated prior variances are small we see that SuSiE has pretty large BFs for all the SERs. Of course, the SER capturing the causal gene set has the largest BF, however, we also see rather enormous BFs for the other SERs as well.
+
+```{r}
+lin_select <- unlist(fit$sets$cs)
+fp <- setdiff(lin_select, sim$idx)
+
+image(cor(as.matrix(X[, c(sim$idx, fp)])))
+
+# overlap with y
+sim$y %*% X[,c(sim$idx, fp)]
+
+# overlap with S \ y
+(X[, sim$idx] - sim$y) %*% X[, c(sim$idx, fp)]
+
+# strong evidence for each effect (large BF)
+# but small effects (first effect is the true effect, order of magniture larger)
+rowSums(fit$alpha * fit$mu)
+fit$lbf
+fit$V
+```
+
+
+### Different choices of scaling/centering do not resolve the issue
+
+```{r}
+fit_scaled <- susieR::susie(X %>% scale(), sim$y, standardize = F)
+fit_centered <- susieR::susie(X %>% scale(center = T, scale = F), sim$y, standardize = F)
+fit_unscaled <- susieR::susie(X, sim$y, standardize = F)
+```
+
+
+```{r}
+par(mfrow=c(1,3))
+plot.pip(sim, fit_scaled, main='Linear')
+plot.pip(sim, fit_centered, main='Linear')
+plot.pip(sim, fit_centered, main='Linear')
+```
+
+
+### Other linear variable selection methods
+
+Sparse linear regression methods like lasso and elastic-net don't fail the way SuSiE did here. For lasso, the model that minimized CV loss has selects the correct component. For elastic net, the solution that minimized CV loss had 4 variables, but the `1se` solution selected only the correct gene set. 
+
+```{r}
+lasso_cv <- glmnet::cv.glmnet(X, sim$y, alpha=1)
+plot(lasso_cv)
+
+lasso_selected <- which(coef(lasso_cv, 'lambda.min')[-1,1] > 0)
+lasso_selected
+```
+
+```{r}
+en_cv <- glmnet::cv.glmnet(X, sim$y, alpha=0.5)
+plot(en_cv)
+
+en_selected <- which(coef(en_cv, 'lambda.min')[-1,1] > 0)
+en_selected
+
+en_selected <- which(coef(en_cv, 'lambda.1se')[-1,1] > 0)
+en_selected
+```
+
+
