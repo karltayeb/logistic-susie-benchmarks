@@ -1,3 +1,17 @@
+---
+title: "Yusha Example"
+author: "Karl Tayeb"
+date: "2023-01-09"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: true
+---
+
 ```{r setup}
 library(targets)
 library(dplyr) 
@@ -31,9 +45,8 @@ fits2 <- fits %>%
 
 ```
 
-```{r}
-fm <- 'vb_ser'
 
+```{r}
 print_cs_tbl <- function(fm){
   cs_tbl <- fits2 %>%
     filter(fit_method == fm) %>%
@@ -48,6 +61,7 @@ print_cs_tbl <- function(fm){
 }
 ```
 
+### SERs
 The Naive VB SER has a very large credible set, and the approximate Bayes Factor is small (supports the null model).
 In contrast GLM SER returns a very small credible set and a very large Bayes Factor-- much larger than the BF computed by the "exact SER" computed via quadrature.
 Note that VB SER and UVB SER should provide BFs that are lower bounds to the true BF. It's appealing to have a conservative estimate of the BF if we want to use it to inform model selection.
@@ -83,6 +97,7 @@ quad_lbf <- fits2 %>% filter(fit_method == 'quad_ser') %>% pull(fit) %>% {.[[1]]
 plot(uvb_lbf, quad_lbf); abline(0, 1, col='red')
 ```
 
+### SuSiE
 
 The results of applying SuSiE to the problem are summarized below. 
 Ultimately, our alternative approaches for logistic SuSiE doesn't give a reasonable solution here.
@@ -104,7 +119,6 @@ print_cs_tbl('ibss_uvb_L10')
 
 ## Top 500 Gene Sets
 
-
 ```{r}
 fits <- tar_read(yusha_fits500)
 
@@ -117,6 +131,8 @@ fits2 <- fits %>%
   mutate(cs = list(logisticsusie:::get_all_cs2(fit$alpha))) %>%
   mutate(cs_tbl = list(logisticsusie:::cs_tbl2(fit$alpha)))
 ```
+
+### SERs
 
 The Naive VB SER puts all it's mass on the 33rd most marginally enriched feature, and has an extremely small BF.
 We know there are several strong enrichments in this example, highlighting how weak the VB bound is when we are forced to optimize the bound over all features jointly/on average.
@@ -151,6 +167,8 @@ quad_lbf <- fits2 %>% filter(fit_method == 'quad_ser') %>% pull(fit) %>% {.[[1]]
 plot(uvb_lbf, quad_lbf); abline(0, 1, col='red')
 ```
 
+
+### SuSiEs
 
 Even when filtering to a smaller set of gene sets, all approximations for logistic SuSiE stuggle:
 
