@@ -1,0 +1,164 @@
+```{r setup}
+library(targets)
+library(dplyr) 
+library(logisticsusie)
+```
+
+## Description
+
+**Data**: Single cell RNA seq of (pancreatic?) cancer tumors. Gene lists derived from matrix factorization loadings.
+
+**Gene sets**: The gene sets used in this example were provided by Yusha, they appear to be some filtered set of MSigDBs C2 genesets.
+Note that gene sets are reorded by the strength of the marginal enrichment via Fisher's exact test. So that when we read `top_feature` in the tables below, we can quickly see how the marginal enrichments for selected gene sets stack up.
+
+This is an example where logistic SuSiE essentially fit the null model.
+It has spurred exploration of different variational approximations.
+While we have been able to develop new approximations that improve the performance of logistic SuSiE in simulation, this examples is still troublesome.
+
+
+## All Gene Sets
+```{r}
+fits <- tar_read(yusha_fits)
+
+fits %>%
+    mutate(converged = if_else(is.null(fit$converged), NA, fit$converged[1]))
+
+fits2 <- fits %>% 
+  filter(fit_method != 'linear_ser') %>%
+  mutate(lbf = list(get_lbfs(fit_method, fit))) %>%
+  mutate(cs = list(logisticsusie:::get_all_cs2(fit$alpha))) %>%
+  mutate(cs_tbl = list(logisticsusie:::cs_tbl2(fit$alpha)))
+
+```
+
+```{r}
+fm <- 'vb_ser'
+
+print_cs_tbl <- function(fm){
+  cs_tbl <- fits2 %>%
+    filter(fit_method == fm) %>%
+    {.$cs_tbl[[1]]}
+
+  lbf <- fits2 %>%
+    filter(fit_method == fm) %>%
+    {.$lbf[[1]]} 
+
+  cs_tbl$lbf <- lbf
+  cs_tbl %>% select(c(size, top_feaure, top_feature_alpha, lbf, L))
+}
+```
+
+The Naive VB SER has a very large credible set, and the approximate Bayes Factor is small (supports the null model).
+In contrast GLM SER returns a very small credible set and a very large Bayes Factor-- much larger than the BF computed by the "exact SER" computed via quadrature.
+Note that VB SER and UVB SER should provide BFs that are lower bounds to the true BF. It's appealing to have a conservative estimate of the BF if we want to use it to inform model selection.
+We see that while VB SER drastically underestimates the BF, UVB SER gives a BF that is closer to the exact computation, and GLM-SER severly overestimates evidence for and effect.
+
+Note: these SERs were run with a fixed prior variance $\sigma^2 = 1$.
+
+```{r}
+# SERs
+print_cs_tbl('vb_ser')
+print_cs_tbl('uvb_ser')
+print_cs_tbl('glm_ser')
+print_cs_tbl('quad_ser')
+```
+
+Fairly good agreement between the UVB-SER PIPs and the quadrature PIPs.
+```{r}
+uvb_pip <- fits2 %>% filter(fit_method == 'uvb_ser') %>% pull(fit) %>% {.[[1]]$alpha}
+quad_pip <- fits2 %>% filter(fit_method == 'quad_ser') %>% pull(fit) %>% {.[[1]]$alpha}
+
+plot(log(uvb_pip), log(quad_pip)); abline(0, 1, col='red')
+```
+
+If we look at the log BFs for each variable we see that VB BFs are smaller-- also there is a "fork".
+The variational BF is a better approximation for some features than others.
+In earlier simulations (link?) it appeared the univariate VB bound was comparably tight across a wide range of plausible settings of the regression coefficients.
+I think this picture warrants exploring how tight the bound is as we also alter the variance or sparsity of the features $X$.
+
+```{r}
+uvb_lbf <- fits2 %>% filter(fit_method == 'uvb_ser') %>% pull(fit) %>% {.[[1]]$lbf}
+quad_lbf <- fits2 %>% filter(fit_method == 'quad_ser') %>% pull(fit) %>% {.[[1]]$lbf}
+
+plot(uvb_lbf, quad_lbf); abline(0, 1, col='red')
+```
+
+
+The results of applying SuSiE to the problem are summarized below. 
+Ultimately, our alternative approaches for logistic SuSiE doesn't give a reasonable solution here.
+
+* Linear SuSie: returns a bunch of singleton credible sets. Many of them are among the top marginally enriched gene sets (TODO: show marginal LBF for the top feature in each gene set)
+* BinSuSiE: extremely wide credible sets across all components.
+* BinSuSiE2: we estimate the prior effect variance in each component $\sigma^2_l$, we fit the null model
+* IBSS2m: `L5` captures the 3rd strongest marginal enrichment. All of the other components also put the most posterior mass on the same feature. Interestingly, they all have positive lbf (supporting the presence of an effect). Still the credible sets are extremely wide, containing most of the gene sets.
+* IBSS-UVB: the top marginally enriched feature has the largest PIP, but the log BFs are near 0, and the credible sets are huge.
+
+```{r}
+# SuSiE
+print_cs_tbl('linear_susie_L10')
+print_cs_tbl('binsusie_L10')
+print_cs_tbl('binsusie2_L10')
+print_cs_tbl('ibss2m_L10')
+print_cs_tbl('ibss_uvb_L10')
+```
+
+## Top 500 Gene Sets
+
+
+```{r}
+fits <- tar_read(yusha_fits500)
+
+fits %>%
+    mutate(converged = if_else(is.null(fit$converged), NA, fit$converged[1]))
+
+fits2 <- fits %>% 
+  filter(fit_method != 'linear_ser') %>%
+  mutate(lbf = list(get_lbfs(fit_method, fit))) %>%
+  mutate(cs = list(logisticsusie:::get_all_cs2(fit$alpha))) %>%
+  mutate(cs_tbl = list(logisticsusie:::cs_tbl2(fit$alpha)))
+```
+
+The Naive VB SER puts all it's mass on the 33rd most marginally enriched feature, and has an extremely small BF.
+We know there are several strong enrichments in this example, highlighting how weak the VB bound is when we are forced to optimize the bound over all features jointly/on average.
+
+Similar to when we looked at all gene sets, we see that UVB-SER gives a log BF closest to the exact result, while GLM-SER dramatically overeseimtates the log BF.
+
+```{r}
+# SERs
+print_cs_tbl('vb_ser')
+print_cs_tbl('uvb_ser')
+print_cs_tbl('glm_ser')
+print_cs_tbl('quad_ser')
+```
+
+Fairly good agreement between the UVB-SER PIPs and the quadrature PIPs.
+```{r}
+uvb_pip <- fits2 %>% filter(fit_method == 'uvb_ser') %>% pull(fit) %>% {.[[1]]$alpha}
+quad_pip <- fits2 %>% filter(fit_method == 'quad_ser') %>% pull(fit) %>% {.[[1]]$alpha}
+
+plot(log(uvb_pip), log(quad_pip)); abline(0, 1, col='red')
+```
+
+If we look at the log BFs for each variable we see that VB BFs are smaller-- also there is a "fork".
+The variational BF is a better approximation for some features than others.
+In earlier simulations (link?) it appeared the univariate VB bound was comparably tight across a wide range of plausible settings of the regression coefficients.
+I think this picture warrants exploring how tight the bound is as we also alter the variance or sparsity of the features $X$.
+
+```{r}
+uvb_lbf <- fits2 %>% filter(fit_method == 'uvb_ser') %>% pull(fit) %>% {.[[1]]$lbf}
+quad_lbf <- fits2 %>% filter(fit_method == 'quad_ser') %>% pull(fit) %>% {.[[1]]$lbf}
+
+plot(uvb_lbf, quad_lbf); abline(0, 1, col='red')
+```
+
+
+Even when filtering to a smaller set of gene sets, all approximations for logistic SuSiE stuggle:
+
+```{r}
+# SuSiE
+print_cs_tbl('linear_susie_L10')
+print_cs_tbl('binsusie_L10')
+print_cs_tbl('binsusie2_L10')
+print_cs_tbl('ibss2m_L10')
+print_cs_tbl('ibss_uvb_L10')
+```
