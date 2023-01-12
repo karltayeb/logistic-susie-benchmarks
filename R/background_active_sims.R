@@ -64,12 +64,13 @@ make_constant_fit_spec <- function(){
     'glm_ser', 'fit_glm_ser', list(),
     'linear_ser', 'fit_linear_susie', list(L=1),
     'linear_susie_L5', 'fit_linear_susie', list(L=5),
-    'binsusie_L5', 'fit_binsusie_wrapped', list(L=5, prior_variance=1),
-    'binsusie2_L5', 'fit_binsusie_wrapped', list(L=5, estimate_prior_variance=T, prior_variance=1),
+    'binsusie_L5', 'fit_binsusie_wrapped', list(L=5, prior_variance=1.000001, estimate_prior_variance=F),
+    'binsusie2_L5', 'fit_binsusie_wrapped', list(L=5, estimate_prior_variance=T, prior_variance=T),
     'ibss2m_L5', 'ibss2m_jax', list(L=5),
     'ibss_uvb_L5', 'fit_ibss_uvb', list(L=5),
-    'ibss_vb_L5', 'fit_ibss_vb', list(L=5)
-  ) %>%
+    'ibss_vb_L5', 'fit_ibss_vb', list(L=5),
+    'ibss_glm_L5', 'fit_ibss_glm', list(L=5)
+    ) %>%
     mutate(fit_sym = rlang::syms(fit_fun))
   return(spec)
 }
