@@ -130,11 +130,47 @@ cs %>%
   facet_wrap(vars(X_name))
 ```
 
+##### $L=1$
+```{r}
+cs %>%
+  filter_ser() %>%
+  filter(L==1) %>%
+  make_cs_coverage_plot() +
+  facet_wrap(vars(X_name))
+```
+
+##### $L>1$
+```{r}
+cs %>%
+  filter_ser() %>%
+  filter(L>1) %>%
+  make_cs_coverage_plot() +
+  facet_wrap(vars(X_name))
+```
+
 #### Credible sets with $\leq 25$ feeatures
 ```{r}
 cs %>%
   filter_ser() %>%
   make_cs_coverage_plot(max_cs_size = 25) +
+  facet_wrap(vars(X_name))
+```
+
+##### $L=1$
+```{r}
+cs %>%
+  filter_ser() %>%
+  filter(L==1) %>%
+  make_cs_coverage_plot(max_cs_size=25) +
+  facet_wrap(vars(X_name))
+```
+
+##### $L>1$
+```{r}
+cs %>%
+  filter_ser() %>%
+  filter(L>1) %>%
+  make_cs_coverage_plot(max_cs_size=25) +
   facet_wrap(vars(X_name))
 ```
 
@@ -151,6 +187,32 @@ cs %>%
 cs %>% 
   filter_ser() %>%
   make_pairwise_cs_size_plot()
+```
+
+##### $L=1$
+```{r}
+cs %>% 
+  filter_ser() %>%
+  filter(L=1) %>%
+  make_coverage_by_cs_size()
+
+cs %>% 
+  filter_ser() %>%
+  filter(L=1) %>%
+  make_cs_size_histogram()
+```
+
+##### $L>1$
+```{r}
+cs %>% 
+  filter_ser() %>%
+  filter(L>1) %>%
+  make_coverage_by_cs_size()
+
+cs %>% 
+  filter_ser() %>%
+  filter(L>1) %>%
+  make_cs_size_histogram()
 ```
 
 ## SuSiE
@@ -176,12 +238,16 @@ pips %>%
 ```
 
 ### FDP vs Power
+
+#### $L=1$
 ```{r}
 pips %>%
   filter_susie() %>%
   filter(L==1) %>%
   make_fdp_plot()
 ```
+
+#### $L > 1$
 
 ```{r}
 pips %>%
@@ -206,6 +272,24 @@ cs %>%
   facet_wrap(vars(X_name))
 ```
 
+##### $L=1$
+```{r}
+cs %>%
+  filter_susie() %>%
+  filter(L=1) %>%
+  make_cs_coverage_plot() +
+  facet_wrap(vars(X_name))
+```
+
+##### $L > 1$
+```{r}
+cs %>%
+  filter_susie() %>%
+  filter(L > 1) %>%
+  make_cs_coverage_plot() +
+  facet_wrap(vars(X_name))
+```
+
 #### Credible sets with $\leq 25$ features
 ```{r}
 cs %>%
@@ -214,6 +298,25 @@ cs %>%
   facet_wrap(vars(X_name))
 ```
 
+##### $L=1$
+
+```{r}
+cs %>%
+  filter_susie() %>%
+  filter(L == 1) %>%
+  make_cs_coverage_plot(max_cs_size = 25) +
+  facet_wrap(vars(X_name))
+```
+
+##### $ L > 1$
+
+```{r}
+cs %>%
+  filter_susie() %>%
+  filter(L > 1) %>%
+  make_cs_coverage_plot(max_cs_size = 25) +
+  facet_wrap(vars(X_name))
+```
 
 #### CS Size Plots
 
@@ -229,4 +332,30 @@ cs %>%
 cs %>% 
   filter_susie() %>%
   make_pairwise_cs_size_plot()
+```
+
+##### $L = 1$
+```{r}
+cs %>% 
+  filter_susie() %>%
+  filter(L=1) %>%
+  make_coverage_by_cs_size()
+
+cs %>% 
+  filter_susie() %>%
+  filter(L=1) %>%
+  make_cs_size_histogram()
+```
+
+##### $L > 1$
+```{r}
+cs %>% 
+  filter_susie() %>%
+  filter(L>1) %>%
+  make_coverage_by_cs_size()
+
+cs %>% 
+  filter_susie() %>%
+  filter(L>1) %>%
+  make_cs_size_histogram()
 ```
