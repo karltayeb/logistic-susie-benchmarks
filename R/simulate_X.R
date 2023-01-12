@@ -13,7 +13,6 @@ make_X_binary_spec <- function(){
   return(X_spec)
 }
 
-
 sim_X_dense <- function(...){logisticsusie:::sim_X(...) %>% scale}
 
 #' Simulate dense X with varying correlation structure
