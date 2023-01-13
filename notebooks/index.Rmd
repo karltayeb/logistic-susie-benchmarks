@@ -4,6 +4,7 @@
 * [Linear SuSiE can fail dramatically](linear_fail.html)
 * [The naive variational approximation is not well suited for variable selection](logistic_fail.html)
 * [Yusha's example](yusha_sc_tumor.html)
+* [Comparison of tilted vs JJ bound](tilted_vs_jj.html)
 
 ## Simulation Results
 Click links below for comparison of different logistic SERs, and logistic SuSiE approaches.
