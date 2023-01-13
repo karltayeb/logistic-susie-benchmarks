@@ -175,6 +175,9 @@ make_cs_coverage_plot <- function(cs, max_cs_size=1e10){
 # CS Size ---------
 #' plot cs coverage by cs size
 make_coverage_by_cs_size <- function(cs){
+  methods <- unique(cs$fit_method)
+  colors <- plot_colors[methods]
+
   cs %>%
     flatten_cs() %>%
     mutate(
@@ -184,16 +187,22 @@ make_coverage_by_cs_size <- function(cs){
     ggplot(aes(x=size_bin, y=covered, color=fit_method)) +
     stat_bs_mean(position=position_dodge(0.3)) +
     geom_hline(yintercept=0.95) +
+    scale_color_manual(values=colors) + 
     theme_bw()
 }
 
 #' plot cs size on histogram
 make_cs_size_histogram <- function(cs){
+  methods <- unique(cs$fit_method)
+  colors <- plot_colors[methods]
+
   cs %>%
     flatten_cs() %>%
     ggplot(aes(x=cs_size, fill=fit_method)) +
     geom_histogram() + 
-    facet_wrap(vars(fit_method)) 
+    facet_wrap(vars(fit_method)) +
+    scale_fill_manual(values=colors) + 
+    theme_bw()
 }
 
 scatter2 <- function(data, mapping, ...){

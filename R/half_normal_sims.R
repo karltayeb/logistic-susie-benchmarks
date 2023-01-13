@@ -37,20 +37,20 @@ make_half_normal_sim_spec <- function(){
 make_half_normal_fit_spec <- function(){
   spec <- tidyr::tribble(
     ~fit_method, ~fit_fun, ~fit_args,
+    # SERs
     'vb_ser', 'fit_bin_ser', list(),
     'uvb_ser', 'fit_uvb_ser', list(),
     'glm_ser', 'fit_glm_ser', list(),
-    'uvb_ser_re', 'fit_uvb_ser_re', list(),
-    'vb_ser_corrected', 'fit_bin_ser_corrected', list(),
     'linear_ser', 'fit_linear_susie', list(L=1),
     'quad_ser', 'fit_quad_ser', list(n=2^8),
-    #'veb_ser', 'fit_veb_ser', list(),
-    'binsusie2_L5', 'fit_binsusie_wrapped', list(L=5, estimate_prior_variance=T, prior_variance=1),
+    # SuSiE
     'linear_susie_L5', 'fit_linear_susie', list(L=5),
-    # 'ibss_vb_L5', 'fit_ibss_vb', list(L=5),
-    # 'ibss_uvb_L5', 'fit_ibss_uvb', list(L=5),
-    'ibss2m_L5', 'ibss2m', list(L=5, maxit=50, track_elbo=T),
-    'ibss2m_L5_jax', 'ibss2m_jax', list(L=5),
+    'binsusie_L5', 'fit_binsusie_wrapped', list(L=5, prior_variance=1, estimate_prior_variance=F),
+    'binsusie2_L5', 'fit_binsusie_wrapped', list(L=5, estimate_prior_variance=T, prior_variance=1),
+    'ibss2m_L5', 'ibss2m_jax', list(L=5),
+    'ibss_uvb_L5', 'fit_ibss_uvb', list(L=5),
+    'ibss_vb_L5', 'fit_ibss_vb', list(L=5),
+    'ibss_glm_L5', 'fit_ibss_glm', list(L=5)
   ) %>%
   mutate(fit_sym = rlang::syms(fit_fun))
   return(spec)
