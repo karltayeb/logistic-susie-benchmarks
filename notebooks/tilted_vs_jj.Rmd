@@ -1,0 +1,128 @@
+---
+title: "Tilted vs JJ Bound"
+author: "Karl Tayeb"
+date: "2023-01-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## The tilted bound
+
+
+```{r tilted_bound}
+sigmoid <- function(x){1 / (1 + exp(-x))}
+
+# an upper bound to E[log(1 + exp(x))]
+# expectation w.r.t N(mu, var)
+tilted_bound <- function(mu, var, xi){
+  tmp <- mu + 0.5 * (1 - 2 * xi) * var
+  bound <- 0.5 * xi^2 * var + log(1 + exp(tmp))
+  return(bound)
+}
+
+fixed_point_iter <- function(mu, var, xi){
+  tmp <- mu + 0.5 * (1 - 2 * xi) * var
+  xi <- sigmoid(tmp)
+  return(xi)
+}
+
+fixed_point_update <- function(mu, var, xi, maxit=100, tol=1e-3){
+  for(i in 1:maxit){
+    xi_old <- xi
+    xi <- fixed_point_iter(mu, var, xi)
+    if(norm(xi - xi_old, '2') < tol){
+      break
+    }
+  }
+  return(xi)
+}
+
+tilted_bound2 <- function(mu, var){
+  xi_init <- sigmoid(mu)
+  xi <- fixed_point_update(mu, var, xi_init)
+  if(min(tilted_bound(mu, var, xi), tilted_bound(mu, var, 0.5))){
+    f <- function(xi){tilted_bound(mu, var, xi)}
+    xi <- optimize(f, c(0, 1))$minimum
+  }
+  return(tilted_bound(mu, var, xi))
+}
+```
+
+
+```{r jj_bound}
+# upper bound to E[log(1 + exp(x))]
+jj_bound <- function(mu, var, xi){
+  lambda <- tanh(xi/2)/xi
+  bound <- -log(sigmoid(xi)) + 0.5 * (mu + xi) +  0.5 * lambda * (mu^2 + var - xi^2)
+  return(bound)
+}
+
+jj_bound_update <- function(mu, var){
+  xi <- sqrt(mu^2 + var)
+  return(xi)
+}
+
+jj_bound2 <- function(mu, var){
+  xi <- jj_bound_update(mu, var)
+  return(jj_bound(mu, var, xi))
+}
+```
+
+```{r mc}
+mc_estimate <- function(mu, var, n=1e3){
+  x <- rnorm(n) * sqrt(var) + mu
+  return(mean(log(1 + exp(x))))
+}
+```
+
+
+```{r mc2}
+mu <- 1
+var <- 100
+
+tilted_bound2(mu, var)
+jj_bound2(mu, var)
+mc_estimate(mu, var, 1e6)
+```
+
+
+For a grid of mu and var, lets create plots of `tilted_bound`, `jj_bound`, and `tilted_bound - jj_bound`. We can use these to assess in what regimes each bound is tighter.
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(ggplot2)
+
+plot_2d_contour <- function(x, y, fun){
+  plot_data <- tidyr::crossing(x = x, y = y) %>%
+    dplyr::rowwise() %>%
+    mutate(z = fun(x, y)) %>%
+    ungroup()
+  
+  plot_data %>%
+    ggplot(aes(x, y, z=z)) + 
+    geom_raster(aes(fill=z)) + 
+    scale_fill_gradient2(high = 'dodgerblue4', low = 'coral4', mid='white')
+}
+```
+
+
+Below we plot the difference between the Jaakola Jordan and tilted bounds. Negative values indicate that JJ is tighter, positive values indicate that the tilted bound is tighter. We see that the JJ bound performs better when the variance is large, whereas the tilted bound performs better when the mean is large.
+
+The JJ bound is more general-- we can approximation the expectation for any distribution as long as we have it's first two moments. The tilted bound assumes a normal distribution, although we could generalize this to other distributions when it is easy to compute $E[x]$ and  $E[e^{-cx}]$ for $c \in [0, 1]$ (e.g. normal mixtures).
+
+```{r}
+mu <- seq(0, 3, by=0.1)
+var <- seq(0, 5, by=0.1)
+
+p1 <- plot_2d_contour(mu, var, jj_bound2)
+p2 <- plot_2d_contour(mu, var, tilted_bound2)
+
+bound_gap <- function(mu, var){jj_bound2(mu, var) - tilted_bound2(mu, var)}
+p3 <- plot_2d_contour(mu, var, bound_gap)
+p3
+```
