@@ -50,7 +50,10 @@ make_half_normal_fit_spec <- function(){
     'ibss2m_L5', 'ibss2m_jax', list(L=5),
     'ibss_uvb_L5', 'fit_ibss_uvb', list(L=5),
     'ibss_vb_L5', 'fit_ibss_vb', list(L=5),
-    'ibss_glm_L5', 'fit_ibss_glm', list(L=5)
+    'ibss_glm_L5', 'fit_ibss_glm', list(L=5),
+    # GLM augmented,
+    'glm_ser_aug', 'fit_glm_ser_aug', list(),
+    'ibss_glm_aug_L5', 'fit_ibss_glm_aug', list(L=5)
   ) %>%
   mutate(fit_sym = rlang::syms(fit_fun))
   return(spec)

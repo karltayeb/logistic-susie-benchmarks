@@ -2,6 +2,7 @@
 plot_colors <- c(
   'glm_ser' = 'aquamarine1', 
   'glm_ser2' = 'aquamarine3', 
+  'glm_ser_aug' = '#088465', 
   'uvb_ser' = 'brown1', 
   'uvb_ser2' = 'brown3', 
   'vb_ser' = 'darkgoldenrod1', 
@@ -14,6 +15,7 @@ plot_colors <- c(
   
   'ibss_glm_L5' = 'aquamarine1', 
   'ibss_glm2_L5' = 'aquamarine3', 
+  'ibss_glm_aug_L5' = '#088465',
   'ibss_uvb_L5' = 'brown1', 
   'ibss_uvb2_L5' = 'brown3', 
   'ibss_vb_L5' = 'darkgoldenrod1', 
