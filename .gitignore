@@ -12,3 +12,4 @@ data/
 clustermq.tmpl
 future.tmpl
 job.sh
+scratch/scratch.R
