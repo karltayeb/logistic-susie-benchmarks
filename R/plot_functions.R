@@ -136,7 +136,7 @@ stat_fdp_power <- function(mapping = NULL, data = NULL, geom = "path",
 # takes an unnested tbl of pips (1 row, 1 pip) and produces the fdr plot
 make_fdp_plot <- function(pips){
   methods <- unique(pips$fit_method)
-  colors <- plot_colors[methods]
+  colors <- plot_colors()[methods]
 
   pips %>%
     unnest_longer(c(pip, causal)) %>%
@@ -158,7 +158,7 @@ flatten_cs <- function(cs){
 
 make_cs_coverage_plot <- function(cs, max_cs_size=1e10){
   methods <- unique(cs$fit_method)
-  colors <- plot_colors[methods]
+  colors <- plot_colors()[methods]
   
   plot <- cs %>% 
     flatten_cs() %>%
@@ -176,7 +176,7 @@ make_cs_coverage_plot <- function(cs, max_cs_size=1e10){
 #' plot cs coverage by cs size
 make_coverage_by_cs_size <- function(cs){
   methods <- unique(cs$fit_method)
-  colors <- plot_colors[methods]
+  colors <- plot_colors()[methods]
 
   cs %>%
     flatten_cs() %>%
@@ -194,7 +194,7 @@ make_coverage_by_cs_size <- function(cs){
 #' plot cs size on histogram
 make_cs_size_histogram <- function(cs){
   methods <- unique(cs$fit_method)
-  colors <- plot_colors[methods]
+  colors <- plot_colors()[methods]
 
   cs %>%
     flatten_cs() %>%
