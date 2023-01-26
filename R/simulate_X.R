@@ -27,16 +27,35 @@ make_X_dense_spec <- function(){
   return(X_spec)
 }
 
-make_X_c2_random_1k <- function(dense = F){
+make_X_c2_random_1k <- function(min_genes = 10, dense = F){
   set.seed(1)
   X <- gseasusie::load_msigdb_geneset_x('C2')$X
+  X <- X[, BiocGenerics::colSums(X) > min_genes]
   X <- X[, sample(dim(X)[2], 1000)]
-  X <- X[BiocGenerics::rowSums(X)>5,]
+  X <- X[BiocGenerics::rowSums(X) > 0,]
 
   if(dense){
     X <- as.matrix(X)
   }
   return(X)
+}
+
+make_X_yusha <- function(){
+  data <- yusha_example_data()
+  X <- as.matrix(data$bindata$X)
+  return(X)
+}
+
+#' generate X from real gene sets
+#' includes Yusha's example, a random 1k sample of Msigdb C2
+make_realX_spec <- function(){
+  X_spec <- tidyr::tribble(
+    ~X_name, ~X_fun, ~X_args, ~X_seed,
+    'X_yusha', 'make_X_yusha', list(), 3
+    # 'X_c2_1k', 'make_X_c2_random_1k', list(min_genes=10, dense=T), 4
+  ) %>%
+  mutate(X_sym = rlang::syms(X_fun))
+  return(X_spec)
 }
 
 make_X_targets <- function(){
