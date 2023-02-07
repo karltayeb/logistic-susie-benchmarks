@@ -15,6 +15,7 @@ library(tictoc)
 source('R/background_active_sims.R')
 
 X <- tar_read(X_c2_random_1k)
+X <- X[,colSums(as.matrix(X)) > 0]
 sim <- sim_y_constant(as.matrix(X), -10, 0, L=1)
 fit <- susieR::susie(X, sim$y)
 fit.logistic <- logisticsusie::binsusie(X, sim$y, max_iter = 50)

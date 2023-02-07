@@ -62,6 +62,7 @@ make_constant_fit_spec <- function(){
     'vb_ser', 'fit_bin_ser', list(),
     'uvb_ser', 'fit_uvb_ser', list(),
     'glm_ser', 'fit_glm_ser', list(),
+    'bayes_ser', 'fit_bayes_ser', list(),
     'linear_ser', 'fit_linear_susie', list(L=1),
     'linear_susie_L5', 'fit_linear_susie', list(L=5),
     'binsusie_L5', 'fit_binsusie_wrapped', list(L=5, prior_variance=1.000001, estimate_prior_variance=F),

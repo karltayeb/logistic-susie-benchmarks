@@ -73,6 +73,7 @@ The VB SER may have slightly anti-conservative PIPs, which is consistent with ou
 the variational approximation will tend to favor whichever feature has the strongest evidence of association.
 
 #### SERs, $L=1$
+
 ```{r}
 pips %>%
   filter_ser() %>%
@@ -82,6 +83,7 @@ pips %>%
 ```
 
 #### SERs, $L > 1$
+
 ```{r}
 pips %>%
   filter_ser() %>%
@@ -99,6 +101,7 @@ When there are multiple effects we see that the performance of the linear model 
 The VB SER does a slightly better job ordering PIPs close to 1, but overall performance is comparable.
 
 #### $L=1$
+
 ```{r}
 pips %>%
   filter_ser() %>%
@@ -115,6 +118,7 @@ pips %>%
   make_fdp_plot()
 ```
 
+
 ### 95% credible set coverage 
 
 As the correlation structure in the design matrix increases, and as the number of enriched features increases we see a loss of coverage in all models.
@@ -123,6 +127,7 @@ We note that the loss of coverage in the VB model as correlation structure incre
 Loss of coverage when $L>1$, and in the linear model, may be attributable to model mis-specification.
 
 #### All credible sets 
+
 ```{r}
 cs %>%
   filter_ser() %>%
@@ -131,24 +136,27 @@ cs %>%
 ```
 
 ##### $L=1$
+
 ```{r}
 cs %>%
   filter_ser() %>%
-  filter(L==1) %>%
+  filter(L[1]==1) %>%
   make_cs_coverage_plot() +
   facet_wrap(vars(X_name))
 ```
 
 ##### $L>1$
+
 ```{r}
 cs %>%
   filter_ser() %>%
-  filter(L>1) %>%
+  filter(L[1]>1) %>%
   make_cs_coverage_plot() +
   facet_wrap(vars(X_name))
 ```
 
 #### Credible sets with $\leq 25$ feeatures
+
 ```{r}
 cs %>%
   filter_ser() %>%
@@ -157,24 +165,27 @@ cs %>%
 ```
 
 ##### $L=1$
+
 ```{r}
 cs %>%
   filter_ser() %>%
-  filter(L==1) %>%
+  filter(L[1]==1) %>%
   make_cs_coverage_plot(max_cs_size=25) +
   facet_wrap(vars(X_name))
 ```
 
 ##### $L>1$
+
 ```{r}
 cs %>%
   filter_ser() %>%
-  filter(L>1) %>%
+  filter(L[1]>1) %>%
   make_cs_coverage_plot(max_cs_size=25) +
   facet_wrap(vars(X_name))
 ```
 
 #### CS Size Plots
+
 ```{r}
 cs %>% 
   filter_ser() %>%
@@ -190,28 +201,29 @@ cs %>%
 ```
 
 ##### $L=1$
+
 ```{r}
-cs %>% 
+cs %>%
   filter_ser() %>%
-  filter(L=1) %>%
+  filter(L[1] == 1) %>%
   make_coverage_by_cs_size()
 
-cs %>% 
+cs %>%
   filter_ser() %>%
-  filter(L=1) %>%
+  filter(L[1] == 1) %>%
   make_cs_size_histogram()
 ```
 
 ##### $L>1$
 ```{r}
-cs %>% 
+cs %>%
   filter_ser() %>%
-  filter(L>1) %>%
+  filter(L[1] > 1) %>%
   make_coverage_by_cs_size()
 
-cs %>% 
+cs %>%
   filter_ser() %>%
-  filter(L>1) %>%
+  filter(L[1] > 1) %>%
   make_cs_size_histogram()
 ```
 
@@ -276,7 +288,7 @@ cs %>%
 ```{r}
 cs %>%
   filter_susie() %>%
-  filter(L=1) %>%
+  filter(L[1]==1) %>%
   make_cs_coverage_plot() +
   facet_wrap(vars(X_name))
 ```
@@ -285,7 +297,7 @@ cs %>%
 ```{r}
 cs %>%
   filter_susie() %>%
-  filter(L > 1) %>%
+  filter(L[1] > 1) %>%
   make_cs_coverage_plot() +
   facet_wrap(vars(X_name))
 ```
@@ -303,7 +315,7 @@ cs %>%
 ```{r}
 cs %>%
   filter_susie() %>%
-  filter(L == 1) %>%
+  filter(L[1] == 1) %>%
   make_cs_coverage_plot(max_cs_size = 25) +
   facet_wrap(vars(X_name))
 ```
@@ -313,7 +325,7 @@ cs %>%
 ```{r}
 cs %>%
   filter_susie() %>%
-  filter(L > 1) %>%
+  filter(L[1] > 1) %>%
   make_cs_coverage_plot(max_cs_size = 25) +
   facet_wrap(vars(X_name))
 ```
@@ -338,12 +350,12 @@ cs %>%
 ```{r}
 cs %>% 
   filter_susie() %>%
-  filter(L=1) %>%
+  filter(L[1] == 1) %>%
   make_coverage_by_cs_size()
 
 cs %>% 
   filter_susie() %>%
-  filter(L=1) %>%
+  filter(L[1] == 1) %>%
   make_cs_size_histogram()
 ```
 
@@ -351,11 +363,11 @@ cs %>%
 ```{r}
 cs %>% 
   filter_susie() %>%
-  filter(L>1) %>%
+  filter(L[1] > 1) %>%
   make_coverage_by_cs_size()
 
 cs %>% 
   filter_susie() %>%
-  filter(L>1) %>%
+  filter(L[1] > 1) %>%
   make_cs_size_histogram()
 ```
