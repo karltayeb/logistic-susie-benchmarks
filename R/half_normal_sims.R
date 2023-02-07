@@ -41,6 +41,7 @@ make_half_normal_fit_spec <- function(){
     'vb_ser', 'fit_bin_ser', list(),
     'uvb_ser', 'fit_uvb_ser', list(),
     'glm_ser', 'fit_glm_ser', list(),
+    'bayes_ser', 'fit_bayes_ser', list(),
     'linear_ser', 'fit_linear_susie', list(L=1),
     'quad_ser', 'fit_quad_ser', list(n=2^8),
     # SuSiE
