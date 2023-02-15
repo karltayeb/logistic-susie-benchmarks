@@ -1,0 +1,549 @@
+---
+title: "Stochastic SuSiE for general likelihoods"
+author: "Karl Tayeb"
+date: "2022-02-07"
+output: html_document
+---
+
+## Why?
+
+We'd like a generic way to perform inference for sparse regression with a SuSiE, *for an arbitrary likelihood*. In particular, we'd like to make it possible for a user to run a valid SuSiE regression provided an implementation of a univariate regression (satisfying some small number of requirements).
+
+Here's the idea: it is always easy to perform inference in single effect regression (SER), because it amounts to (1) performing $p$ univariate Bayesian regressions, and (2) averaging over these $p$ models. Even for non-conjugate likelihoods, we can always perform 1d integration. In contrast, the sum of single effects regression (SuSiE) is challenging to perform inference in. The variational approximation for SuSiE $q(b, \gamma) = \prod_l q(b_l, \gamma_l)$ is sufficient to dramatically simplify inference in the linear case. However, for general likelihoods we are not so lucky, and the evaluation of the lower bound involves explicity summing over $L^p$ configurations of the selected variables.
+
+Here we propose a stochastic optimization of the SuSiE ELBO, which let's us improve the ELBO by fitting a sequence of SERs. This let's us keep the basic "unit" of computation evaluating a univariate logistic regression, but extends SuSiE to arbitrary likelihoods. Our requirement will be that we can fit a fixed-form variational approximation to the univariate logistic regression, where $q(b)$ is constrained to be normal.
+
+
+## Stochastic optimization
+
+The SuSiE ELBO:
+
+$$
+\mathcal L(q) = \mathbb E_q\left[\log p (y | X, b, \gamma) \right] - KL\left[q(b, \gamma) || p(b, \gamma) \right]
+$$
+
+For the family that factorizes as $q(b, \gamma) = \prod_l q(b_l, \gamma_l)$, written as a function of $q_l= q(b_l, \gamma_l)$
+
+$$
+\mathcal L(q_l) = \mathbb E_{q_{-l}}\left[\mathbb E_{q_{l}}\left[
+\log p (y | X, b_l, \gamma_l, b_{-l}, \gamma_{-l}) \right]\right]
+- KL\left[q(b_l, \gamma_l) || p(b_l, \gamma_l)
+\right] + C
+$$
+Where $C$ is a constant that absorbs terms not dependent on $q_l$. and $b_{-l}$,  $\gamma_{-l}$ denote the $L-1$ other SER parameters.
+
+We can take a Monte-Carlo estimate of the outer expectation by sampling from $q_{-l}$. Let $b^{(m)}_{-l}$ and $\gamma^{(m)}_{-l}$ denote samples from $q_{-l}$, we can get an unbiased estimate of the ELBO by
+
+$$
+\hat{\mathcal L}(q_l) = \frac{1}{M} \sum \mathbb E_{q_{l}}\left[
+\log p (y | X, b_l, \gamma_l, b_{-l}^{(m)}, \gamma_{-l}^{(m)}) 
+- KL\left[q(b_l, \gamma_l) || p(b_l, \gamma_l)
+\right]\right] + C \approx \mathcal L(q_l)
+$$
+
+
+Notice the term in the sum is the ELBO for a SER where $b_{-l}$ and $\gamma_{-l}$ are known. If we fit a fixed-form variational approximation for this SER $q^{(m)}(b_l, \gamma_l)$, where $q^{(m)}(b_l | \gamma_l)$ is constrained to be Gaussian (or more generally, $q^{(m)}(b | \gamma)$ and $p(b)$ are the same exponential family), then (I claim) we can get a Monte-carlo estimate of the best fixed-form approximation for $q(b_l, \gamma_l)$ by averaging the natural parameters of $q^{(m)}$.
+
+This is true for the linear model (where the likelihood is conditionally conjugate, and the best unconstrained approximation for $q(b | \gamma)$ is Gaussian). It may take a little extra work to justify that it's the right thing to do for other likelihoods.
+
+
+```{r linear_ser}
+linear_ser <- function(X, y, o, residual_variance=var(y), prior_variance=1, estimate_intercept=T, estimate_residual_variance=F,...){
+  # form the residual, center
+  if(is.list(o)) {
+    # if o = list(mu, var), just take o$mu for offset
+    o <- o$mu 
+  }
+  r <- y - o
+  r <- r - mean(r)
+  
+  # do linear regression, assumes columns of X are mean 0
+  yTx <- (r %*% X)[1,]
+  xTx <- purrr::map_dbl(1:ncol(X), ~sum(X[, .x]^2))
+  betahat = yTx / xTx
+  
+  # form final posterior
+  shat2 <- residual_variance / xTx
+  
+  lbf <- 0.5 * log(shat2 / (prior_variance + shat2)) + (0.5 * betahat^2/shat2 * prior_variance/(prior_variance + shat2))
+  alpha <- exp(lbf - matrixStats::logSumExp(lbf))
+  post_var <- 1 / (1/ prior_variance + 1/shat2)
+  post_mean <- post_var/shat2 * betahat
+  
+  res <- list(
+    alpha = alpha,
+    mu = post_mean,
+    var = post_var,
+    lbf = lbf,
+    lbf_model = matrixStats::logSumExp(lbf) - log(length(lbf)),
+    prior_variance=prior_variance
+  )
+  return(res)
+}
+```
+
+
+```{r natural_parameter_functions}
+#' convert mean/variance to natural parameters
+normal_mean2natural <- function(mu, var){
+  eta1 <- mu/var
+  eta2 <- -0.5 / var
+  return(list(eta1=eta1, eta2=eta2))
+}
+
+#' convert natural parameters to mean/variance 
+normal_natural2mean <- function(eta1, eta2){
+  mu <- -0.5 * eta1 / eta2
+  var <- mu / eta1
+  return(list(mu=mu, var=var))
+}
+
+#' a convex combination of the natural parameters of two normal distributions
+normal_update <- function(mu, var, mu_new, var_new, lambda){
+  # convert to natural parameter space
+  eta <- normal_mean2natural(mu, var)
+  eta_new <- normal_mean2natural(mu_new, var_new)
+  
+  # combine
+  eta1 <- eta$eta1 * lambda + eta_new$eta1 * (1 - lambda)
+  eta2 <- eta$eta2 * lambda + eta_new$eta2 * (1 - lambda)
+  
+  # convert back to mean/variance
+  return(normal_natural2mean(eta1, eta2))
+}
+
+
+#' convert categorical probabilities to natural parameters
+categorical_mean2natural <- function(pi){
+  K <- length(pi)
+  logpi <- log(pi)
+  logpi[is.infinite(logpi)] <- -1e10
+  return(head(logpi - logpi[K], K-1))
+}
+
+#' convert categorical natural parameters to probabilities
+categorical_natural2mean <- function(eta){
+  K <- length(eta) + 1
+  eta <- c(eta, 0)
+  pi <- exp(eta - matrixStats::logSumExp(eta))
+  return(pi)
+}
+
+#' convex combination of natural paramaters of two probability vectors
+categorical_update <- function(pi, pi_new, lambda){
+  # convert to natural parameter space
+  eta <- categorical_mean2natural(pi)
+  eta_new <- categorical_mean2natural(pi_new)
+  
+  # combine
+  eta <- eta * lambda + eta_new * (1 - lambda)
+
+  # convert back to mean/variance
+  return(categorical_natural2mean(eta))
+}
+
+#' Update q SER
+#' 
+#' Average natural parameters of two SERs
+#' Each q is an SER posterior, a list with `mu`, `var`, and `lambda`
+#' @param q1 an SER posterior
+#' @param q2 an SER posterior
+#' @param lambda in [0, 1], how much to weight q1
+update_q_ser <- function(q1, q2, lambda){
+    q <- normal_update(q1$mu, q1$var, q2$mu, q2$var, lambda=lambda)
+    q$alpha <- categorical_update(q1$alpha, q2$alpha, lambda=lambda)
+    return(q)
+}
+```
+
+
+```{r sampling_functions}
+#' Sample gamma from the SuSiE posterior
+susie_sample_gamma <- function(alpha){
+  L <- nrow(alpha)
+  p <- ncol(alpha)
+  
+  gamma <- vector('numeric', L)
+  for(l in 1:L){
+    gamma[l] <- sample(p, 1, prob=alpha[l,])
+  }
+  return(gamma)
+}
+
+#' Sample b | gamma from the SuSiE posterior
+susie_sample_b <- function(gamma, mu, var){
+  L <- length(gamma)
+  b <- vector('numeric', L)
+  for(l in 1:L){
+    b[l] <- rnorm(1, mean=mu[l, gamma[l]], sd=sqrt(var[l, gamma[l]]))
+  }
+  return(b)
+}
+
+#' Sample offset
+#' 
+#' Computes a Monte-Carlo sample of X E[b]
+#' where `b` is sampled from `fit`
+#' @param fit a susie fit (minimally, a list with `alpha`, `mu`, `var`)
+#' @param X an n x p matrix
+#' @l a single effect to exclude/zero-out (defalt 0, don't remove any single effect)
+#' @sample_b whether to sample `b_l` if false
+#' @return an offset, which is a list containing `mu` and `var`.
+#'  If `sample_b=T` `mu` is the sample predictions, and `var` is a vector of 0s
+#'  Otherwise `mu` is the E_q[Xb | gamma] and `var` is Var_q[Xb | gamma]
+sample_offset <- function(fit, X, l=0, sample_b=T){
+  gamma <- with(fit, susie_sample_gamma(alpha))
+  L <- length(gamma)
+  if(sample_b){
+    b <- with(fit, susie_sample_b(gamma, mu, var))
+    b[l] <- 0  # 0 out the effect (note if l=0 this does nothing)
+    o <- list(mu = (X[, gamma] %*% b)[, 1], var = rep(0, nrow(X)))
+  } else {
+    mu <- purrr::map_dbl(1:L, ~fit$mu[.x, gamma[.x]])
+    var <- purrr::map_dbl(1:L, ~fit$var[.x, gamma[.x]])
+    mu[l] <- 0  # 0 out effect l
+    var[l] <- 0
+    
+    mu <- (X[, gamma] %*% mu)[, 1]
+    mu2 <- (X[, gamma]^2 %*% var)[,1] + mu^2
+    o <- list(mu = mu, mu2=mu2)
+  }
+  return(o)
+}
+
+#' Initialize q SER
+#' 
+#' A simple initialization for the SER posterior, initialize to prior
+#' @param p number of features
+#' @param prior_variance prior variance of the effect
+initialize_q_ser <- function(p, prior_variance=1){
+  post <- list(
+    mu = rep(0, p),
+    var = rep(prior_variance, p),
+    alpha = rep(1/p, p)
+  )
+  return(post)
+}
+```
+
+```{r kl_functions}
+kl_ser <- function(q1, q2){
+  kl <- logisticsusie:::categorical_kl(q1$alpha, q2$alpha)
+  kl <- kl + sum(q1$alpha * logisticsusie:::normal_kl(q1$mu, q1$var, q2$mu, q2$var))
+  return(kl)
+}
+
+kl_ser_sym <- function(q1, q2){
+  kl_ser(q1, q2) + kl_ser(q2, q1)
+}
+```
+
+
+```{r stochastic_ser_function}
+stochastic_ser <- function(X, y, fit, l, niter=100, q_init=NULL, history=F, ser_fun=NULL, sample_b=T){
+  # 0: setup
+  p <- ncol(fit$alpha)
+  
+  # if no ser specified, default to linear
+  if(is.null(ser_fun)){
+    ser_fun = linear_ser
+  }
+  
+  if(is.null(q_init)){      # initialize posterior if not provided
+    o <- sample_offset(fit, X, l=l, sample_b = sample_b)
+    post <- ser_fun(X, y, o)
+  } else{
+    post <- q_init
+  }
+  
+  # run stochastic updates for 100 iterations
+  post_history <- list()
+  for (iter in 1: niter){
+    # 1. sample the L-1 effects (removing effect l)
+    o <- sample_offset(fit, X, l=l, sample_b=sample_b)
+    
+    # 2. fit SER with sampled offset
+    ser <- ser_fun(X, y, o)
+
+    # 3. keep running average of natural parameters
+    post <- update_q_ser(post, ser, 1 - 1/(iter + 1))
+    
+    if(history){
+      post_history[[iter]] <- post
+    }
+    
+  }
+  
+  if(history){
+    return(post_history)
+  } else{
+    return(post)
+  }
+}
+```
+
+
+```{r sim1}
+# simulate data
+set.seed(5)
+sim <- logisticsusie::sim_susie(length_scale = 10)
+
+# standardize data
+data <- with(sim, {
+  y <- y - mean(y)
+  X <- scale(X)
+  list(y=y, X=X)
+})
+
+# fit SuSiE
+susie_fit <- with(data, susieR::susie(
+  X, y, L = 5, scaled_prior_variance = 1, estimate_prior_variance = F, estimate_residual_variance = F))
+susieR::susie_plot(susie_fit, 'PIP')
+susie_fit$var <- susie_fit$mu2 - susie_fit$mu^2
+susie_l3 <- list(
+  alpha=susie_fit$alpha[3,],
+  mu=susie_fit$mu[3,],
+  var=susie_fit$var[3,]
+)
+```
+
+### Stochastic Approdimation for Linear SER
+
+We use a toy simulation with 3 effects, and fit linear SuSiE as a baseline. Our goal here is to estimate $q(b_3, \gamma_3)$ using our stochastic approach. We fix the residual variance $\sigma^2 = Var(y)$ where $Var(y)$ is the sample variance, and the prior variance $\sigma^2_0 = 1$. We see that as we average the natural parameters across many draws of $\gamma_{-l}$, or $\{\gamma_{-l}, b_{-l}\}$ we approach the exact SER solution. Unsurprisingly, when we only sample over configurations, the convergence is much faster.
+
+```{r sim1_stochastic_optimization}
+# stochastic SER, sampling b
+max_iter <- 1000
+stochastic_l3_b <- with(data, stochastic_ser(
+  X, y, susie_fit, 3, niter=max_iter, history = T, sample_b = T))
+# compute symmetrized KL between stochastic SER and exact SER posterior 
+kls_b <- purrr::map_dbl(1:length(stochastic_l3_b), ~ kl_ser_sym(susie_l3, stochastic_l3_b[[.x]]))
+
+
+# stochastic SER, integrate over b
+stochastic_l3_Eb <- with(data, stochastic_ser(
+  X, y, susie_fit, 3, niter=max_iter, history = T, sample_b = F))
+kls_Eb <- purrr::map_dbl(1:length(stochastic_l3_Eb), ~ kl_ser_sym(susie_l3, stochastic_l3_Eb[[.x]]))
+```
+
+
+```{r sim1_kl_convergence}
+s <- 10
+kls_b_trunc <- tail(kls_b, -s)
+kls_Eb_trunc <- tail(kls_Eb, -s)
+yrange <- range(c(0, kls_b_trunc, kls_Eb_trunc))
+plot(kls_b_trunc,
+     col = 'blue',
+     xlab='iter',
+     ylab = 'KL_sym',
+     type = 'line',
+     ylim = yrange,
+     main='Symmetrized KL Divergence between SER fit stochastic SER fit'
+)
+lines(kls_Eb_trunc, col='red')
+
+abline(0, 0, col='black', lty='dotted')
+
+# Add a legend
+legend(
+  x = length(kls_Eb_trunc) * 0.8,
+  y = yrange[2] * 0.9,
+  legend = c('sample b', 'Eb'),
+  lty = c('solid', 'solid'),
+  col = c('blue', 'red'),
+  cex=0.8
+)
+```
+
+```{r sim1_posterior_alpha}
+par(mfrow = c(1, 2))
+plot(log(stochastic_l3_b[[max_iter]]$alpha),
+     log(susie_l3$alpha),
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = 'sample b - log(alpha)')
+abline(0, 1, col='red')
+
+plot(log(stochastic_l3_Eb[[max_iter]]$alpha),
+     log(susie_l3$alpha),
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = ' E[b] - log(alpha)')
+abline(0, 1, col='red')
+```
+
+```{r sim1_posterior_mu}
+par(mfrow = c(1, 2))
+plot(stochastic_l3_b[[max_iter]]$mu,
+     susie_l3$mu,
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = 'sample b - mu')
+abline(0, 1, col='red')
+
+plot(stochastic_l3_Eb[[max_iter]]$mu,
+     susie_l3$mu,
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = ' E[b] - mu')
+abline(0, 1, col='red')
+```
+
+Note: there seems to be some slight disagreement between our computation of the posterio variance and `susieR`'s. Since we are giving standardized `X` in this example, posterior variance is the same for all features.
+s
+```{r sim1_posterior_var}
+par(mfrow = c(1, 2))
+plot(stochastic_l3_b[[max_iter]]$var,
+     susie_l3$var,
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = 'sample b - var')
+abline(0, 1, col='red')
+
+plot(stochastic_l3_Eb[[max_iter]]$var,
+     susie_l3$var,
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = ' E[b] - var')
+abline(0, 1, col='red')
+```
+
+### Use stochastic SER to make stochastic SuSiE
+
+```{r stochastic_susie_functions}
+update_fit <- function(fit, ser, l){
+  fit$alpha[l,] <- ser$alpha
+  fit$mu[l,] <- ser$mu
+  fit$var[l,] <- ser$var
+  return(fit)
+}
+
+stochastic_susie <- function(X, y, L, prior_variance=1., niter=100, ser_iter = 100, history=F, ser_fun=NULL, sample_b=T){
+  # 0: setup
+  n <- length(y)
+  p <- ncol(X)
+  
+  # initialize
+  fit <- list(
+    alpha = matrix(rep(1/p, p*L), nrow = L),
+    mu = matrix(rep(0, p*L), nrow = L),
+    var = matrix(rep(prior_variance, p*L), nrow = L)
+  )
+  post_history <- list()
+  
+  # initialize_sers
+  sers <- purrr::map(1:L, ~initialize_q_ser(p))
+  
+  for (iter in 1: niter){
+    for (l in 1:L){
+      # TODO: set q_init = sers[[l]]?
+      # right now it doesnt make much difference, only weighed as 1 sample
+      ser_l <- stochastic_ser(X, y, fit, l, niter=ser_iter, ser_fun=ser_fun, sample_b = sample_b)
+      sers[[l]] <- ser_l
+      fit <- update_fit(fit, ser_l, l)
+    }
+    if(history){
+      post_history[[iter]] <- fit
+    }
+  }
+  if(history){
+    return(post_history)
+  } else{
+    return(fit)
+  }
+}
+
+susie_plot2 <- function(fit, X, y = "PIP", ...) {
+  fit$pip <- logisticsusie:::compute_pip(fit$alpha)
+  fit$sets <- susieR::susie_get_cs(fit, X = X)
+  class(fit) <- "susie"
+  susieR::susie_plot(fit, y, ...)
+}
+```
+
+### Linear SuSiE Test
+
+```{r sim2_susie}
+library(tictoc)
+
+# simulate data
+set.seed(10)
+sim <- logisticsusie::sim_susie(length_scale = 20)
+
+# standardize data
+data <- with(sim, {
+  y <- y - mean(y)
+  X <- scale(X)
+  list(y=y, X=X)
+})
+
+tic('ibss')
+ibss_fit <- with(data, logisticsusie::ibss_from_ser(
+  X, y, L=5, prior_variance = 1, ser_function = linear_ser))
+toc()
+
+tic('stochastic ibss')
+stochastic_fit_b <- with(data, stochastic_susie(
+  X, y, L=5, niter = 20, ser_iter = 100, history = T, sample_b = T))
+toc()
+
+tic('stochastic ibss')
+stochastic_fit_Eb <- with(data, stochastic_susie(
+  X, y, L=5, niter = 20, ser_iter = 100, history = T, sample_b = F))
+toc()
+
+tic('susie')
+susie_fit <- with(data, susieR::susie(
+  X, y, L = 5, scaled_prior_variance = 1, estimate_prior_variance = F))
+toc()
+```
+
+
+```{r}
+par(mfrow = c(1, 3))
+susie_plot2(stochastic_fit_b[[20]], data$X, main = 'Stochastic - sample b')
+susie_plot2(stochastic_fit_Eb[[20]], data$X, main = 'Stochastic - E[b]')
+susie_plot2(ibss_fit, data$X, main =' SuSiE')
+```
+
+### Logistic SuSiE Test
+
+On a small example, we see comparable performance between our stochastic approximation moment-mathcing
+
+```{r sim3_logistic_susie}
+library(tictoc)
+
+# simulate data
+set.seed(12)
+sim <- logisticsusie::sim_susie(length_scale = 20)
+
+# standardize X
+data <- with(sim, {
+  y <- y
+  X <- scale(X)
+  list(y=y, X=X)
+})
+
+tic('ibss')
+ibss_uvb_fit <- with(data, logisticsusie::ibss_from_ser(
+  X, y, L=5, prior_variance = 1, ser_function = logisticsusie::fit_uvb_ser))
+toc()
+
+tic('stochastic uvb')
+stochastic_uvb_re_fit <- with(data, stochastic_susie(
+  X, y, L=5, niter = 10, ser_iter = 10, history = T, ser_fun = logisticsusie::fit_uvb_ser_re, sample_b = F))
+toc()
+```
+
+
+```{r}
+par(mfrow = c(1, 2))
+susie_plot2(stochastic_uvb_re_fit[[10]], data$X, main = 'Stochastic - UVB-RE')
+susie_plot2(ibss_uvb_fit, data$X, main ='IBSS-UVB')
+```
+
+
+
+
+
+

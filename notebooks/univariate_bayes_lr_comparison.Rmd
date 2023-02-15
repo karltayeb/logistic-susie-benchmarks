@@ -1,0 +1,356 @@
+---
+title: "A comparison of univariate Bayesian logistic regression approximations"
+author: "Karl Tayeb"
+date: "2022-2-01"
+output: html_document
+---
+
+## Why
+
+Here we assess the performance of different posterior approximations to the univariate Bayesian logistic regression with normal prior. Across all examples we treat the intercept as a nuisance parameter that is optimized over. We are particularly interested in (1) the approximation to the model evidence (marginalizing over the effect)-- or equivalently the approximate BFs as this quantity is critical for variable selection in the SER and (2) the apprxoimate posterior mean, as this is the minimal information we need to apply IBSS. Additionally we will look at (3) the posterior variance which may figure in to more sophisticated (and hopefully more principled) approaches for extending the SER to SuSiE.
+
+## Simulation
+
+Since we are interested in the GSEA application we will simulate binary $x$. We will simulate a total of $n=500$ observations, and $||x||_1 = m$.
+
+For $y$ we will simulate a fixed "background" rate and "active" rate.
+
+```{r}
+sigmoid <- function(x) 1/(1 + exp(-x))
+
+make_x <- function(m, n=500){c(rep(1, m), rep(0, n-m))}
+
+simulate_y <- function(x, b0=-3, b=1){
+  n <- length(x)
+  m <- sum(x)
+  
+  logits <- b0 + x*b
+  y <- rbinom(n, 1, sigmoid(logits))
+  return(y)
+}
+
+# return evidence...
+quad <- statmod::gauss.quad.prob(n = 1024, dist = "uniform", l = -10, u = 10)
+
+fit_univariate_vb_suite <- function(x, y, prior_variance=1){
+  prior_variance <- 1
+  ll0 <- logisticsusie:::null_model_likelihood_with_offset(y, 0)
+  res <- list()
+  
+  # vb
+  fit <- logisticsusie:::fit_univariate_vb(x, y, tau0 = 1/prior_variance)
+  lbf <- tail(fit$elbos, 1) - ll0
+  res$vb <- list(lbf=lbf, mu = fit$mu, var=1 / fit$tau, intercept=fit$delta)
+
+  # glm
+  fit <- glm(y ~ x, family = 'binomial')
+  coef <- summary(fit)$coef
+  if(dim(coef)[1] == 2){
+    intercept <- coef[1,1]
+    betahat <- coef[2,1]
+    shat2 <- coef[2,2]^2
+  } else{
+    # if we weren't able to estimate the effect-- return BF 1
+    intercept <- coef[1,1]
+    betahat <- 0
+    shat2 <- 1e6
+  }
+  
+  # combine normal approximation of the likelihood with  prior
+  var_post <- 1 / (1/shat2 + 1/prior_variance)
+  mu_post <- var_post/shat2 *  betahat
+
+  lbf <- dnorm(betahat, mean = 0, sd = sqrt(shat2 + prior_variance), log = TRUE) -
+      dnorm(betahat, mean = 0, sd = sqrt(shat2), log = TRUE)
+  res$wakefield <- list(lbf=lbf, mu = mu_post, var = var_post, intercept=intercept)
+  
+  # full bayes
+  fit <- logisticsusie:::bayes_logistic(x, y, 0, 0, 1, quad, T)
+  fit$lbf <- fit$logpy - ll0
+  fit$logpy <- NULL
+  res$bayes <- fit
+  
+  return(res)
+}
+```
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+x <- make_x(10)
+y <- simulate_y(x, b0 = -3, b=10)
+
+config <- tidyr::crossing(
+  m = seq(5, 50, by=5),
+  b0 = c(-3, -2, -1),
+  b = seq(0, 3, by=0.5)
+)
+
+set.seed(1)
+res <- config %>% 
+  rowwise() %>%
+  mutate(x = list(make_x(m))) %>%
+  mutate(y = list(simulate_y(x, b0, b))) %>%
+  mutate(fit = list(fit_univariate_vb_suite(x, y, prior_variance = 1)))
+```
+
+
+```{r}
+res2 <- res %>% 
+  #hoist(fit, bayes='bayes') %>%
+  unnest_longer(fit, indices_to = 'method') %>%
+  unnest_wider(fit)
+
+# raw lbf
+res2 %>%
+  ggplot(aes(x=m, y=b, fill=lbf)) + 
+  geom_tile() + 
+  scale_fill_gradient2() +
+  facet_wrap(vars(method))
+
+# raw mean
+res2 %>%
+  ggplot(aes(x=m, y=b, fill=mu)) + 
+  geom_tile() + 
+  scale_fill_gradient2() +
+  facet_wrap(vars(method))
+
+# raw variance
+res2 %>%
+  ggplot(aes(x=m, y=b, fill=var)) + 
+  geom_tile() + 
+  scale_fill_gradient2() +
+  facet_wrap(vars(method))
+```
+
+
+```{r}
+res2 <- res %>% 
+  hoist(fit, bayes='bayes') %>%
+  unnest_longer(fit, indices_to = 'method') %>%
+  unnest_wider(fit) %>%
+  rowwise() %>%
+  mutate(
+    lbf = lbf - bayes$lbf,
+    mu = mu - bayes$mu,
+    var = var - bayes$var,
+    intercept = intercept - bayes$intercept) %>%
+  ungroup()
+
+# relative lbf
+res2 %>%
+  ggplot(aes(x=m, y=b, fill=lbf)) + 
+  geom_tile() + 
+  scale_fill_gradient2() +
+  facet_wrap(vars(method))
+
+# relative mean
+res2 %>%
+  ggplot(aes(x=m, y=b, fill=mu)) + 
+  geom_tile() + 
+  scale_fill_gradient2() +
+  facet_wrap(vars(method))
+
+# relative variance
+res2 %>%
+  ggplot(aes(x=m, y=b, fill=var)) + 
+  geom_tile() + 
+  scale_fill_gradient2() +
+  facet_wrap(vars(method))
+```
+
+
+```{r}
+res2 <- res %>% 
+  unnest_longer(fit, indices_to = 'method') %>%
+  unnest_wider(fit)
+
+res3 <- res2 %>%
+  select(lbf, method, m, b0, b) %>%
+  pivot_wider(names_from = method, values_from = lbf)
+
+
+res3 %>% ggplot(aes(x=wakefield, y=bayes)) + geom_point() + geom_abline(slope=1, intercept = 0, color='red')
+res3 %>% ggplot(aes(x=vb, y=bayes)) + geom_point() + geom_abline(slope=1, intercept = 0, color='red')
+
+```
+
+## Understanding Wakefield Approximation
+
+### Comparing log likelihood of the binomial model to the normal approximation
+
+How much data do we need for the normal approximation to be good? Here we simulate $n$ i.i.d samples of $x \sim N(0, 1)$ and $y \sim Bin(\sigma(b x))$ for various $b$ and $n$. We fit the logistic regression and get $\hat\beta$ and $s$, the effect MLE and standard error respectively. We compare the $\log N(\hat\beta; b, s^2)$ and $\sum_i \log p(y_i; b)$ for a grid over $b \pm 3 s$. When the normal approximation is good we should see good agreement between (appropriately normalized) log-likelihoods.
+
+Below we show results for $b=0.1, 1., 5$ over a range of sample sizes $n=100, 1000, 10000, 100000$. The approximation improves with increasing sample size, and decreasing effect size.
+
+```{r}
+binomial_vs_asymptotic_normal_ll <- function(n, b, n_sd=3){
+  x <- rnorm(n)
+  y <- rbinom(length(x), 1, sigmoid(b * x))
+  
+  fit <- glm(y ~ 0 + x, family='binomial')
+  coef <- summary(fit)$coef
+  
+  betahat <- coef[1,1]
+  shat <- coef[1, 2]
+  
+  b_grid <- seq(betahat - n_sd * shat, betahat + n_sd * shat, by = 0.01)
+  
+  # compute loglikelihood
+  ll <- function(b) sum(dbinom(y, 1, sigmoid(b * x), log=T))
+  lls <- purrr::map_dbl(b_grid, ll)
+  
+  # normal log likelihood
+  ll_norm <- dnorm(b_grid, betahat, shat, log = T)
+  
+  title <- paste('log-likelihood: n = ', n, 'b = ', b)
+  plot(ll_norm, lls - max(lls) + max(ll_norm), 
+       xlab = 'Normal', ylab = 'Binomial',
+       main=title);
+  abline(0, 1, col='red')
+}
+```
+
+
+
+```{r}
+par(mfrow=c(2, 2))
+binomial_vs_asymptotic_normal_ll(100, 0.1, n_sd=3)
+binomial_vs_asymptotic_normal_ll(1000, 0.1, n_sd=3)
+binomial_vs_asymptotic_normal_ll(10000, 0.1, n_sd=3)
+binomial_vs_asymptotic_normal_ll(100000, 0.1, n_sd=3)
+```
+
+```{r}
+par(mfrow=c(2, 2))
+binomial_vs_asymptotic_normal_ll(100, 1, n_sd=3)
+binomial_vs_asymptotic_normal_ll(1000, 1, n_sd=3)
+binomial_vs_asymptotic_normal_ll(10000, 1, n_sd=3)
+binomial_vs_asymptotic_normal_ll(100000, 1, n_sd=3)
+```
+
+```{r}
+par(mfrow=c(2, 2))
+binomial_vs_asymptotic_normal_ll(100, 5, n_sd=3)
+binomial_vs_asymptotic_normal_ll(1000, 5, n_sd=3)
+binomial_vs_asymptotic_normal_ll(10000, 5, n_sd=3)
+binomial_vs_asymptotic_normal_ll(100000, 5, n_sd=3)
+```
+
+### Cases where Wakefield ABF is way off!
+
+Given the MLE and standard errors, $\hat\beta$ and $s$, we compute the approximate log Bayes Factors as 
+
+```
+  lbf <- dnorm(betahat, mean = 0, sd = sqrt(shat2 + prior_variance), log = TRUE) -
+      dnorm(betahat, mean = 0, sd = sqrt(shat2), log = TRUE)
+```
+
+Oddly, the approximate logBFs seem to be off factor of the effect size $b  \sqrt{ V(X) }$ (at least when $x \sim N(0, V)$)! I have no idea why that's happening. If we think about the normal approximation to the binomial, we expect it to be good for large $n$ and moderate $p$. When the effect size is large, and the variance of $X$ is large, most of our observations are far from the "moderate $p$" regime. Perhaps it is not surprising that the approximation breaks down here, but it seems to be doing so in a surprisingly regular and dramatic way. 
+
+Below we show for a range of $V(X)$ between $1$ and $5$ and $b$ between $1$ and $5$.
+
+Note: the treatment of the intercept is different in the Wakefield ABF computation compared to `Bayes` and `VB` which optimize over a fixed intercept parameter for the null model and normal-effect model seperately. But this seems like a pretty extreme difference!
+
+```{r}
+f <- function(V, b){
+  x <- sqrt(V) * rnorm(1000)
+  y <- rbinom(length(x), 1, sigmoid(b * x))
+  
+  example <- fit_univariate_vb_suite(x, y, prior_variance = 1000)
+  return(example$bayes$lbf/example$wakefield$lbf)
+}
+
+abf_div <- tidyr::crossing(V = seq(1, 5, by = 1), b=seq(1, 5, by=0.5), rep=1:3) %>%
+  rowwise() %>%
+  mutate(div = f(V, b)) %>%
+  ungroup() %>% 
+  mutate(bsqrtV = b * sqrt(V))
+
+plot(abf_div$bsqrtV, abf_div$div); abline(0, 1, col='red')
+```
+
+### A few individual examples
+
+```{r}
+x <- rnorm(1000)
+y <- rbinom(length(x), 1, sigmoid(5 * x))
+
+example <- fit_univariate_vb_suite(x, y, prior_variance = 1000)
+example$bayes$lbf
+example$vb$lbf
+example$wakefield$lbf
+```
+
+```{r}
+x <- rnorm(1000)
+y <- rbinom(length(x), 1, sigmoid(3 * x))
+
+example <- fit_univariate_vb_suite(x, y, prior_variance = 1000)
+example$bayes$lbf
+example$vb$lbf
+example$wakefield$lbf
+```
+
+```{r}
+x <- rnorm(1000)
+y <- rbinom(length(x), 1, sigmoid(2 * x))
+
+example <- fit_univariate_vb_suite(x, y, prior_variance = 1000)
+example$bayes$lbf
+example$vb$lbf
+example$wakefield$lbf
+```
+
+
+```{r}
+x <- rnorm(1000)
+y <- rbinom(length(x), 1, sigmoid(2 * x))
+
+example <- fit_univariate_vb_suite(x, y, prior_variance = 1000)
+example$bayes$lbf
+example$vb$lbf
+example$wakefield$lbf
+```
+
+
+### Case where Wakefield ABF is close to exact BF
+
+For small $b$ we get good agreement between the ABF and exact BF, even for small $n$.
+
+```{r}
+x <- rnorm(100)
+y <- rbinom(length(x), 1, sigmoid(0.1 * x))
+
+example <- fit_univariate_vb_suite(x, y, prior_variance = 1000)
+example$bayes$lbf
+example$vb$lbf
+example$wakefield$lbf
+```
+
+```{r}
+x <- rnorm(1000)
+y <- rbinom(length(x), 1, sigmoid(0.1 * x))
+
+example <- fit_univariate_vb_suite(x, y, prior_variance = 1000)
+example$bayes$lbf
+example$vb$lbf
+example$wakefield$lbf
+```
+
+```{r}
+x <- rnorm(10000)
+y <- rbinom(length(x), 1, sigmoid(0.1 * x))
+
+example <- fit_univariate_vb_suite(x, y, prior_variance = 1000)
+example$bayes$lbf
+example$vb$lbf
+example$wakefield$lbf
+```
+
+
+
+
