@@ -32,6 +32,9 @@ fit_ibss_veb <- function(X, y, L, ...){
 }
 
 
+fit_logistic_polysusie <- function(X, y, L, ...){
+  polysusie::logistic_polysusie(X, y, L, ...)
+}
 # binsusie -----------
 
 #' remove the lth effect from a susie fit
