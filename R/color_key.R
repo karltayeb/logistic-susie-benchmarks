@@ -27,6 +27,10 @@ plot_colors <- function(){
     'binsusie2_L5' = 'olivedrab4',
     'ibss2m_L5' = 'brown3',
     'ibss2m_L5_jax' = 'brown4',
-    'linear_susie_L5' =  'royalblue4'
+    'linear_susie_L5' =  'royalblue4',
+
+    'poly_susie_M2_L5'= '#ea97f0',
+    'poly_susie_M6_L5'= '#ea5ff4',
+    'poly_susie_M10_L5'= '#e415f3'
   )
 }
