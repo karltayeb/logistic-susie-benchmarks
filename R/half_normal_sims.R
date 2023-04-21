@@ -54,7 +54,11 @@ make_half_normal_fit_spec <- function(){
     'ibss_glm_L5', 'fit_ibss_glm', list(L=5),
     # GLM augmented,
     'glm_ser_aug', 'fit_glm_ser_aug', list(),
-    'ibss_glm_aug_L5', 'fit_ibss_glm_aug', list(L=5)
+    'ibss_glm_aug_L5', 'fit_ibss_glm_aug', list(L=5),
+    # Polynomial susie
+    'poly_susie_M2_L5', 'fit_logistic_polysusie', list(L=5, left=-5, right=5, M=2),
+    'poly_susie_M6_L5', 'fit_logistic_polysusie', list(L=5, left=-5, right=5, M=6),
+    'poly_susie_M10_L5', 'fit_logistic_polysusie', list(L=5, left=-5, right=5, M=10)
   ) %>%
   mutate(fit_sym = rlang::syms(fit_fun))
   return(spec)
@@ -76,6 +80,6 @@ half_normal_target <- list(
     half_normal_fits, fit_from_spec(half_normal_spec),
     pattern = map(half_normal_spec)
   ),
-  tar_target(half_normal_pips, score_pips(half_normal_fits)),
-  tar_target(half_normal_cs, score_cs(half_normal_fits))
+  tar_target(half_normal_pips, score_pips(half_normal_fits), pattern=map(half_normal_fits)),
+  tar_target(half_normal_cs, score_cs(half_normal_fits), pattern=map(half_normal_fits))
 )
