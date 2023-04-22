@@ -29,6 +29,6 @@ list(
   half_normal_target,
   constant_sim_target,
   # realX_constant_sim_target,
-  website,
-  yusha_example_targets
+  website
+  #yusha_example_targets
 )
