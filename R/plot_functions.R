@@ -114,13 +114,14 @@ compute_power_fdr_thresh <- function(pip, causal){
 
 StatFDPvP <- ggplot2::ggproto(
   "StatFDP", ggplot2::Stat,
-  compute_group = function(data, scales){
+  compute_group = function(data, scales, max_fdp=1, max_power=1){
     # x = pip, y = causal
     res <- compute_power_fdr_thresh(data$x, data$y)
-    res <- data.frame(x = res$fdr, y = res$power)
+    res <- data.frame(x = res$fdr, y = res$power) %>%
+      filter(x <= max_fdp)
     return(res)
   },
-  required_aes = c("x", "y")
+  required_aes = c('x', 'y')
 )
 
 stat_fdp_power <- function(mapping = NULL, data = NULL, geom = "path",
@@ -134,14 +135,14 @@ stat_fdp_power <- function(mapping = NULL, data = NULL, geom = "path",
 }
 
 # takes an unnested tbl of pips (1 row, 1 pip) and produces the fdr plot
-make_fdp_plot <- function(pips){
+make_fdp_plot <- function(pips, ...){
   methods <- unique(pips$fit_method)
   colors <- plot_colors()[methods]
 
   pips %>%
     unnest_longer(c(pip, causal)) %>%
     ggplot(aes(pip, causal, color=fit_method)) + 
-    stat_fdp_power(geom='path') +
+    stat_fdp_power(geom='path', ...) +
     labs(x='False Discovery Proportion', y='Power') +
     scale_color_manual(values=colors)
 }

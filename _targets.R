@@ -16,6 +16,7 @@ plan(callr)
 tar_option_set(
   packages = c("tibble", "logisticsusie", "dplyr", "tidyr", "purrr", "ggplot2", "susieR", "stringr"), # packages that your targets need to run
   format = "rds", # default storage format
+  error = 'continue',
   workspace_on_error = TRUE # Save a workspace file for a target that errors out.
   # Set other options as needed.
 )
