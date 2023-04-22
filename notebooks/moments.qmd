@@ -1,0 +1,140 @@
+```{r}
+reticulate::py_config()
+```
+
+
+```{python susie_mgf}
+import jax
+import numpy as np
+from jax import numpy as jnp
+from jax import grad
+from jax import vmap
+from jax import jit
+
+def normal_mgf(t, mu, var):
+  return jnp.exp(mu * t + 0.5 * var * t**2)
+  
+def normal_mixture_mgf(t, pi, mu, var):
+  return(jnp.sum(pi * normal_mgf(t, mu, var)))
+
+normal_mixture_mgf_vec = vmap(normal_mixture_mgf, (None, 0, 0, 0), 0)
+
+def susie_mgf(t, alpha, mu, var):
+  return(jnp.prod(normal_mixture_mgf_vec(t, alpha, mu, var)))
+
+normal_moments = {0: normal_mgf}
+for i in range(1, 5):
+  normal_moments[i] = grad(moments[i-1])
+
+normal_moments[0](0., 1., 1.)
+normal_moments[1](0., 1., 1.)
+normal_moments[2](0., 1., 1.)
+
+normal_moments2 = {k: vmap(v, (None, 0, 0), 0) for k, v in normal_moments.items()}
+
+mu = np.zeros(4)
+var = np.arange(4) + 1
+normal_moments2[0](0., mu, var)
+normal_moments2[1](0., mu, var)
+normal_moments2[2](0., mu, var)
+normal_moments2[3](0., mu, var)
+normal_moments2[4](0., mu, var)
+
+def normal_mixture_moments(t, pi, mu, var, k):
+  return jnp.inner(pi, normal_moments2[k](t, mu, var))
+
+pi = np.ones(4)/4
+normal_mixture_moments(pi, mu, var, 1)
+normal_mixture_moments(pi, mu, var, 2)
+normal_mixture_moments(pi, mu, var, 3)
+normal_mixture_moments(pi, mu, var, 4)
+
+
+L = 20
+p = 1000
+alpha = np.ones(L*p).reshape(L, p) / p
+mu = np.zeros((L, p))
+var = np.ones(L*p).reshape(L, p)
+
+susie_mgf(0., alpha, mu, var)
+normal_mixture_mgf_vec(0, alpha, mu, var)
+
+susie_moments = {0: susie_mgf}
+for k in range(1, 10):
+  susie_moments[k] = jit(grad(susie_moments[k-1]))
+
+
+# once compiled it's fast
+# but it takes longer and longer for increasing moments
+susie_moments[1](0., alpha, mu, var)
+susie_moments[2](0., alpha, mu, var)
+susie_moments[3](0., alpha, mu, var)
+susie_moments[4](0., alpha, mu, var)
+susie_moments[5](0., alpha, mu, var)
+susie_moments[6](0., alpha, mu, var)
+```
+
+We can compute the moments of $\psi$ under $q = \prod_l q_l$ using the following recursion where $S_1$ = $X_1$.
+
+$$
+\E{}{S_n^k} = \sum {k \choose i} \E{}{X_n^i} \E{}{S_{n-1}^{k-i}}
+$$
+
+To update these values when we get a new $q_l$, we need to update $\E{}{X_l^k}$ for $k=1, \dots, K$ and $S_j^k, \forall j \geq l$.
+
+```{python moments_of_sum}
+def make_binomial_coef(k):
+  binomial_coef = {}
+  binomial_coef[0] = jnp.array([1])
+  for k in range(1, 50):
+    x = np.concatenate(([0], binomial_coef[k-1], [0]))
+    binomial_coef[k] = jnp.array(x[1:] + x[:-1])
+  return(binomial_coef)
+
+binomial_coef = make_binomial_coef(50)
+
+def make_q(p):
+  return(dict(alpha = np.ones(p)/p, mu = np.zeros(p), var=np.ones(p)))
+
+# L = 20 single effects, K moments (e.g. for degree-K approximation)
+K = 10
+EX = np.random.normal(size=(L, 10 + 1))**2
+
+#S[i, j] = E[S_{i+1}^{j}]
+S = np.zeros_like(EX)
+S[0, ] = EX[0,]
+
+def compute_Snk(x, s, k):
+  return jnp.sum(x[:k] * s[:k][::-1] * binomial_coef[k-1])
+
+def compute_Sn(x, s):
+  k = x.size
+  return np.array([compute_Snk(x, s, z) for z in range(1, k+1)])
+
+
+S[0] = EX[0]
+for l in range(1, L):
+  S[l] = compute_Sn(EX[l], S[l-1])
+  
+S[19, 1]
+```
+
+$$
+\begin{aligned}
+\log p (y | \psi) 
+&= \sum_k c_k \psi^k \\
+&= \sum_k c_k (\psi_l + \psi{-l})^k \\
+&= \sum_k c_k \sum_{j \leq k} {k \choose j} \psi_l^{j} \psi_{-l}^{k-j} \\
+&= \sum_j \psi_l^j \left(\sum_{k \geq j} c_k {k \choose j} \psi_{-l}^{k-j}\right) \\
+&= \sum_j \psi_l^j d_j
+
+\end{aligned}
+$$
+
+```{python}
+c = np.random.normal(size=K)
+c
+```
+
+
+

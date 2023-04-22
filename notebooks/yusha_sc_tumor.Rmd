@@ -15,7 +15,23 @@ output:
 ```{r setup}
 library(targets)
 library(dplyr) 
+library(tidyr)
 library(logisticsusie)
+```
+
+```{r}
+print_cs_tbl <- function(fm){
+  cs_tbl <- fits2 %>%
+    filter(fit_method == fm) %>%
+    {.$cs_tbl[[1]]}
+
+  lbf <- fits2 %>%
+    filter(fit_method == fm) %>%
+    {.$lbf[[1]]} 
+
+  cs_tbl$lbf <- lbf
+  cs_tbl %>% select(c(size, top_feaure, top_feature_alpha, lbf, L))
+}
 ```
 
 ## Description
@@ -43,22 +59,6 @@ fits2 <- fits %>%
   mutate(cs = list(logisticsusie:::get_all_cs2(fit$alpha))) %>%
   mutate(cs_tbl = list(logisticsusie:::cs_tbl2(fit$alpha)))
 
-```
-
-
-```{r}
-print_cs_tbl <- function(fm){
-  cs_tbl <- fits2 %>%
-    filter(fit_method == fm) %>%
-    {.$cs_tbl[[1]]}
-
-  lbf <- fits2 %>%
-    filter(fit_method == fm) %>%
-    {.$lbf[[1]]} 
-
-  cs_tbl$lbf <- lbf
-  cs_tbl %>% select(c(size, top_feaure, top_feature_alpha, lbf, L))
-}
 ```
 
 ### SERs
@@ -123,7 +123,7 @@ print_cs_tbl('ibss_uvb_L10')
 fits <- tar_read(yusha_fits500)
 
 fits %>%
-    mutate(converged = if_else(is.null(fit$converged), NA, fit$converged[1]))
+    mutate(converged = ifelse('converged' %in% names(fit), fit$converged, NA))
 
 fits2 <- fits %>% 
   filter(fit_method != 'linear_ser') %>%
@@ -131,6 +131,37 @@ fits2 <- fits %>%
   mutate(cs = list(logisticsusie:::get_all_cs2(fit$alpha))) %>%
   mutate(cs_tbl = list(logisticsusie:::cs_tbl2(fit$alpha)))
 ```
+
+### Annealing (Forard regression initialization)
+
+```{r}
+tar_load(yusha_data500)
+yusha_data500
+
+temp_schedule <- c(seq(0.1, 1, by = 0.1), rep(1, 10))
+temp_schedule <- c(0.01, 0.01, 0.01)
+
+l1 <- with(yusha_data500, logisticsusie::fit_uvb_ser(as.matrix(X), y))
+max(logisticsusie:::anneal(l1$alpha, 0.01))
+
+res <- with(yusha_data500, logisticsusie::ibss_from_ser2(
+  X, y, L=3, 
+  maxit = 2,
+  ser_function = logisticsusie::fit_uvb_ser,
+  temperature = temp_schedule
+))
+
+logisticsusie:::cs_tbl2(res$alpha) %>%
+  unnest_longer(c(cs, prob))
+
+
+make_cs
+```
+
+```{r}
+
+```
+
 
 ### SERs
 
@@ -141,11 +172,50 @@ Similar to when we looked at all gene sets, we see that UVB-SER gives a log BF c
 
 ```{r}
 # SERs
-print_cs_tbl('vb_ser')
-print_cs_tbl('uvb_ser')
-print_cs_tbl('glm_ser')
-print_cs_tbl('quad_ser')
+rbind(
+  print_cs_tbl('vb_ser') %>% mutate(method = 'vb_ser'),
+  print_cs_tbl('glm_ser')  %>% mutate(method = 'glm_ser'),
+  print_cs_tbl('uvb_ser') %>% mutate(method = 'uvb_ser'),
+  print_cs_tbl('bayes_ser')  %>% mutate(method = 'bayes_ser')
+)
 ```
+
+GLM SER dramatically overestimates the the evidence for an effect, while VB-SER dramatically underestimates the evidence for an effect.
+This indicates that 
+
+
+```{r}
+# SERs
+rbind(
+  print_cs_tbl('linear_susie_L10') %>% mutate(method = 'linear_susie_L10'),
+  print_cs_tbl('binsusie_L10')  %>% mutate(method = 'binsusie_L10'),
+  print_cs_tbl('ibss_uvb_L10') %>% mutate(method = 'ibss_uvb_L10')
+)
+print_cs_tbl('linear_susie_L10') %>% mutate(method = 'linear_susie_L10')
+print_cs_tbl('binsusie_L10')  %>% mutate(method = 'binsusie_L10')
+print_cs_tbl('ibss_uvb_L10') %>% mutate(method = 'ibss_uvb_L10')
+```
+
+```{r}
+library(tidyr)
+
+fits3 <- fits2$fit
+names(fits3) <- fits2$fit_method
+
+# bayes
+logisticsusie:::cs_tbl2(fits3$bayes_ser$alpha) %>%
+  unnest_longer(c(cs, prob))
+
+logisticsusie:::cs_tbl2(fits3$uvb_ser$alpha) %>%
+  unnest_longer(c(cs, prob))
+
+logisticsusie:::cs_tbl2(fits3$vb_ser$alpha) %>%
+  unnest_longer(c(cs, prob))
+
+logisticsusie:::cs_tbl2(fits3$glm_ser$alpha) %>%
+  unnest_longer(c(cs, prob))
+```
+
 
 Fairly good agreement between the UVB-SER PIPs and the quadrature PIPs.
 ```{r}

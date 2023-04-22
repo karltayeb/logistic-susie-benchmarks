@@ -1,0 +1,44 @@
+---
+title: "IBSS Heuristic Notes"
+author: "Karl Tayeb"
+date: "2022-02-19"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+    includes:
+      in_header: "preamble.tex"
+  html_document:
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+
+## "Justification" for running IBSS with general likelihood
+
+With $q = \prod q_l$
+
+
+\begin{align}
+\Lsusie(q_l; q_{-l})
+&= \E{q}{\log p(y, \beta_l, \beta_{-l} | X) - \log q} \\
+&\approx \E{q_l}{\log p(y, \beta_l, \bar \beta_{-l}) - \log q_l} + C \\
+&= \Lser(q_l, \bar \beta_{-l}) + H(q)
+\end{align}
+
+In the second line we "approximate" by simply pushing the expectation over $q_{-l}$ into the log likelihood term.
+It turns out this holds exactly when $\log p$ is quadratic in $\beta = \beta_l + \beta_{-l}$
+(e.g. Gaussian likelihood case). Noting that $\E{q}{\beta^2} = (\beta_l + \bar\beta_{-l})^2 + V(\beta_{-l})$, we can see that $\E{q}{Q(\beta)} = \E{q_l}{Q(\beta_l + \bar \beta_{-l})} + C$ where $C$ is a constant with respect to $q_l$, and $Q$ is a quadratic function.
+
+The approximation should be good when $\log p(y, \beta_l, \beta_{-l})$ is well approximated by a quadratic function in $\beta$,
+that is, in the asymptotic regime (large $n$ small $|\beta|$). Then, we might hope this approximation works well when $\log p(y, \beta_l, \bar\beta_{-l})$:
+
+$$
+\begin{aligned}
+\E{q_l}{\E{\qml}{\log p (y, \beta_l, \beta_{-l})}} 
+&\approx \E{q_l}{\E{\qml}{Q(\beta_l + \beta_{-l})}} \\
+&= \E{q_l}{Q(\beta_l + \bar\beta_{-l}) + C} \\
+&\approx \E{q_l}{\log p(y, \beta_l, \bar \beta_{-l})} + C
+\end{aligned}
+$$
