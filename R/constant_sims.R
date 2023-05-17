@@ -27,7 +27,7 @@ sim_constant <- function(X, background, active, L){
   reps <- 1:20
 
   # generate simulations
-  sims <- tidyr::crossing(constantcgkround=background, active=active, L=L, rep=reps) %>%
+  sims <- tidyr::crossing(background=background, active=active, L=L, rep=reps) %>%
     dplyr::mutate(X_name = attributes(X)$name) %>%
     dplyr::rowwise() %>%
     dplyr::mutate(sim = list(sim_y_constant(X, background, active, L))) %>%
@@ -56,36 +56,10 @@ make_constant_sim_spec <- function(){
 }
 
 # define models to fit
-make_constant_fit_spec <- function(){
-  spec <- tidyr::tribble(
-    ~fit_method, ~fit_fun, ~fit_args,
-    'vb_ser', 'fit_bin_ser', list(),
-    'uvb_ser', 'fit_uvb_ser', list(),
-    'glm_ser', 'fit_glm_ser', list(),
-    'bayes_ser', 'fit_bayes_ser', list(),
-    'linear_ser', 'fit_linear_susie', list(L=1),
-    'linear_susie_L5', 'fit_linear_susie', list(L=5),
-    'binsusie_L5', 'fit_binsusie_wrapped', list(L=5, prior_variance=1.000001, estimate_prior_variance=F),
-    'binsusie2_L5', 'fit_binsusie_wrapped', list(L=5, estimate_prior_variance=T, prior_variance=T),
-    'ibss2m_L5', 'ibss2m_jax', list(L=5),
-    'ibss_uvb_L5', 'fit_ibss_uvb', list(L=5),
-    'ibss_vb_L5', 'fit_ibss_vb', list(L=5),
-    'ibss_glm_L5', 'fit_ibss_glm', list(L=5),
-    # GLM augmented,
-    'glm_ser_aug', 'fit_glm_ser_aug', list(),
-    'ibss_glm_aug_L5', 'fit_ibss_glm_aug', list(L=5),
-    # 'ibss_bayes_L5', 'fit_ibss_bayes', list(L=5, maxit=20),
-    # Polynomial susie
-    'poly_susie_M2_L5', 'fit_logistic_polysusie', list(L=5, left=-5, right=5, M=2),
-    'poly_susie_M6_L5', 'fit_logistic_polysusie', list(L=5, left=-5, right=5, M=6),
-    'poly_susie_M10_L5', 'fit_logistic_polysusie', list(L=5, left=-5, right=5, M=10)
-    ) %>%
-    mutate(fit_sym = rlang::syms(fit_fun))
-  return(spec)
-}
+source('R/susie_methods.R')
+make_constant_fit_spec <- make_fit_spec
 
-# build simulation spec
-
+# make simulation spec
 make_constant_spec <- function(){
   spec <- tidyr::crossing(
     make_X_binary_spec(),
