@@ -22,6 +22,8 @@ library(dplyr)
 library(tidyr)
 library(targets)
 library(ggplot2)
+
+tar_source()
 ```
 
 ```{r load_data}
@@ -106,7 +108,7 @@ The VB SER does a slightly better job ordering PIPs close to 1, but overall perf
 pips %>%
   filter_ser() %>%
   filter(L==1) %>%
-  make_fdp_plot()
+  make_fdp_plot(max_fdp=0.3)
 ```
 
 #### $L>1$
@@ -115,7 +117,7 @@ pips %>%
 pips %>%
   filter_ser() %>%
   filter(L>1) %>%
-  make_fdp_plot()
+  make_fdp_plot(max_fdp=0.3)
 ```
 
 
@@ -256,7 +258,7 @@ pips %>%
 pips %>%
   filter_susie() %>%
   filter(L==1) %>%
-  make_fdp_plot()
+  make_fdp_plot(max_fdp=0.3)
 ```
 
 #### $L > 1$
@@ -265,7 +267,7 @@ pips %>%
 pips %>%
   filter_susie() %>%
   filter(L>1) %>%
-  make_fdp_plot()
+  make_fdp_plot(max_fdp=0.3)
 ```
 
 ### 95% credible set coverage 

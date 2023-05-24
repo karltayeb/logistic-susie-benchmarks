@@ -19,11 +19,11 @@ exec2 <- function(seed, fun, args, ...){
 #' @param fit_fun the fit function name (accepts X and y as first two arguments)
 #' @param fit_args optional arguments for the fit function
 #' @return and m x 2 tibble with columns 'method' and 'fit'
-fit_model <- function(X, sims, method, fit_fun, fit_args = list()){
+fit_model_to_sims <- function(X, sims, fit_method, fit_fun, fit_args = list()){
   fits <- sims %>%
     dplyr::rowwise() %>%
     dplyr::mutate(
-      method=method,
+      method=fit_method,
       fit = list(rlang::exec(fit_fun, X=X, y = sim$y, !!!fit_args))) %>%
     select(method, fit) %>%
     ungroup()
@@ -40,7 +40,7 @@ fit_from_spec <- function(spec){
     mutate(
       X = list(exec2(X_seed , X_fun, X_args)),
       sims = list(exec2(y_seed, y_fun, y_args, list(X=X))),
-      fit = list(fit_model(X, sims, fit_method, fit_fun, fit_args))
+      fit = list(fit_model_to_sims(X, sims, fit_method, fit_fun, fit_args)) 
     ) %>%
     ungroup() %>%
     nest(  # compact

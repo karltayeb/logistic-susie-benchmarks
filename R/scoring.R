@@ -16,8 +16,8 @@ get_all_coverage <- function(css, idx) {
 }
 
 #' compute CS and annotate with coverage info
-make_scored_cs <- function(alpha, idx){
-  cs <- logisticsusie::compute_cs(alpha) %>%
+make_scored_cs <- function(alpha, idx, requested_coverage=0.95){
+  cs <- logisticsusie::compute_cs(alpha, requested_coverage) %>%
     { 
       # special case for SER
       if(is.null(nrow(alpha))){
@@ -43,17 +43,20 @@ get_lbfs <- function(fit_method, fit){
 score_cs <- function(fits){
   cs1 <- fits %>%
     select(X_name, y_name, fit_method, sims, fit) %>%
-    unnest_wider(sims) %>%
+    unnest_wider(sims, simplify=F) %>%
     hoist(fit,  fitted = list('fit')) %>%
+    rowwise() %>%
+    mutate(fit = list(fitted[[1]]$fit)) %>%
+    select(-fitted) %>%
     unnest_longer(-c(X_name, y_name, fit_method)) %>%
     rowwise() %>%
     mutate(
-      alpha = list(fitted$alpha),
+      alpha = list(fit$alpha),
       idx = list(sim$idx)
     ) %>%
     ungroup() %>%
     mutate(hash = purrr::map_chr(sim, rlang::hash)) %>%
-    select(-c(sim, fitted, fit))
+    select(-c(sim, fit))
 
   cs2 <- cs1 %>%
     rowwise() %>%
@@ -61,7 +64,13 @@ score_cs <- function(fits){
       cs = list(make_scored_cs(alpha, idx))
     ) %>%
     select(-c(alpha))
-  return(cs2)
+
+  # collect non-standard metadata (e.g. simulation parameters)
+  # into list-column named `sim`
+  cs3 <- cs2 %>%
+    ungroup() %>%
+    nest(sim = -c('X_name', 'y_name', 'fit_method', 'hash', 'cs'))
+  return(cs3)
 }
 
 # Score PIP ------------
@@ -89,13 +98,16 @@ score_pips <- function(fits){
     select(X_name, y_name, fit_method, sims, fit) %>%
     unnest_wider(sims) %>%
     hoist(fit,  fitted = list('fit')) %>%
+    rowwise() %>%
+    mutate(fit = list(fitted[[1]]$fit)) %>%
+    select(-fitted) %>%
     unnest_longer(-c(X_name, y_name, fit_method)) %>%
     rowwise() %>%
     mutate(
-      pip = list(compute_pip(fitted$alpha)),
+      pip = list(compute_pip(fit$alpha)),
       causal = list(as.integer(1:length(pip) %in% sim$idx))
     ) %>%
-    select(-c(sim, fitted, fit))
+    select(-any_of(c('sim', 'fit', 'beta')))
   return(score_pip_tbl)
 }
 

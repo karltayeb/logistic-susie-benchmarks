@@ -151,7 +151,7 @@ make_fdp_plot <- function(pips, ...){
 flatten_cs <- function(cs){
   # 1 row, 1 credible set
   cs <- cs %>%
-    unnest_longer(c(cs, lbf)) %>%
+    unnest_longer(c(cs)) %>%
     rowwise() %>%
     mutate(covered = any(cs$covered), cs_size=cs$size, which_covered = list(cs$which_covered))
   return(cs)
@@ -164,6 +164,7 @@ make_cs_coverage_plot <- function(cs, max_cs_size=1e10){
   plot <- cs %>% 
     flatten_cs() %>%
     filter(cs_size <= max_cs_size) %>%
+    hoist(sim, 'L') %>%
     ggplot(aes(x=as.factor(L), y=as.numeric(covered), color=fit_method)) + 
     stat_bs_mean(position=position_dodge(0.1)) +
     scale_color_manual(values=colors) + 
