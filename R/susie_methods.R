@@ -80,7 +80,7 @@ remove_effect <- function(fit, l=1){
   fit2$params$mu <- fit2$params$mu[-l,]
   fit2$params$var <- fit2$params$var[-l,]
   fit2$params$delta <- matrix(fit2$params$delta[-l,], ncol = 1)
-  
+
   fit2$hypers$L <- fit2$hypers$L - 1
   fit2$hypers$pi <- fit2$hypers$pi[-l,]
   fit2$hypers$prior_mean <- fit2$hypers$prior_mean[-l]
@@ -95,7 +95,7 @@ compute_component_lbfs <- function(fit){
   for(l in 1:fit$L){
     if(fit$hypers$prior_variance[l] > 0.01){
       elbo_null <- fit %>%
-        remove_effect(l) %>% 
+        remove_effect(l) %>%
         logisticsusie:::fit.binsusie(fit_prior_variance = F, fit_alpha = F) %>%
         logisticsusie:::compute_elbo.binsusie()
       lbfs[l] <- tail(fit$elbo, 1) - elbo_null
@@ -108,7 +108,7 @@ fit_binsusie_wrapped <- function(X, y, L, ...){
   tictoc::tic()
   fit <- logisticsusie::binsusie(X, y, L=L, ...)
   timer <- tictoc::toc()
-  
+
   fit$elapsed_time <- timer$toc - timer$tic
 
   data <- logisticsusie::binsusie_prep_data(X, y, N=rep(1, nrow(X)), Z=NULL)

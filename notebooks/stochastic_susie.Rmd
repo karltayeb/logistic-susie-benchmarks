@@ -2,8 +2,16 @@
 title: "Stochastic SuSiE for general likelihoods"
 author: "Karl Tayeb"
 date: "2022-02-07"
-output: html_document
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
 ---
+
+```{r}
+library(tictoc)
+```
 
 ## Why?
 
@@ -47,6 +55,10 @@ Notice the term in the sum is the ELBO for a SER where $b_{-l}$ and $\gamma_{-l}
 This is true for the linear model (where the likelihood is conditionally conjugate, and the best unconstrained approximation for $q(b | \gamma)$ is Gaussian). It may take a little extra work to justify that it's the right thing to do for other likelihoods.
 
 
+## Code
+
+### Linear SER
+
 ```{r linear_ser}
 linear_ser <- function(X, y, o, residual_variance=var(y), prior_variance=1, estimate_intercept=T, estimate_residual_variance=F,...){
   # form the residual, center
@@ -82,6 +94,7 @@ linear_ser <- function(X, y, o, residual_variance=var(y), prior_variance=1, esti
 }
 ```
 
+### Stochastic optimization for SER/SuSiE
 
 ```{r natural_parameter_functions}
 #' convert mean/variance to natural parameters
@@ -93,25 +106,20 @@ normal_mean2natural <- function(mu, var){
 
 #' convert natural parameters to mean/variance 
 normal_natural2mean <- function(eta1, eta2){
+  if(missing(eta2)) {
+    eta2 <- eta1[2]
+    eta1 <- eta1[1]
+  }
   mu <- -0.5 * eta1 / eta2
   var <- mu / eta1
   return(list(mu=mu, var=var))
 }
 
-#' a convex combination of the natural parameters of two normal distributions
-normal_update <- function(mu, var, mu_new, var_new, lambda){
-  # convert to natural parameter space
+normal_cumulant <- function(mu, var){
   eta <- normal_mean2natural(mu, var)
-  eta_new <- normal_mean2natural(mu_new, var_new)
-  
-  # combine
-  eta1 <- eta$eta1 * lambda + eta_new$eta1 * (1 - lambda)
-  eta2 <- eta$eta2 * lambda + eta_new$eta2 * (1 - lambda)
-  
-  # convert back to mean/variance
-  return(normal_natural2mean(eta1, eta2))
+  a <- -0.25 * eta$eta1^2/eta$eta2 - 0.5 * log(-2 * eta$eta2)
+  return(a)
 }
-
 
 #' convert categorical probabilities to natural parameters
 categorical_mean2natural <- function(pi){
@@ -129,17 +137,30 @@ categorical_natural2mean <- function(eta){
   return(pi)
 }
 
-#' convex combination of natural paramaters of two probability vectors
-categorical_update <- function(pi, pi_new, lambda){
-  # convert to natural parameter space
-  eta <- categorical_mean2natural(pi)
-  eta_new <- categorical_mean2natural(pi_new)
-  
-  # combine
-  eta <- eta * lambda + eta_new * (1 - lambda)
 
-  # convert back to mean/variance
-  return(categorical_natural2mean(eta))
+categorical_cumulant <- function(eta){
+  return(matrixStats::logSumExp(c(eta, 0)))
+}
+
+#' convert mean parameters to natural paramers
+#' @param q: a list with `mu`, `var` and `alpha`
+#' @returns a list with `eta1`, `eta2`, and `gamma`
+#'  which are the natural parameters for q(b | gamma) and q(gamma) respectively
+ser_mean2natural <- function(q){
+  qb <- do.call(rbind, purrr::map2(q$mu, q$var, ~unlist(normal_mean2natural(.x, .y))))
+  eta_gamma <- categorical_mean2natural(q$alpha)
+  q <- list(eta1 = qb[,1], eta2 = qb[,2], gamma = eta_gamma)
+  return(q)
+}
+
+#' convert natural parameters to mean parameters for SER
+#' @param q a list with `eta1`, `eta2`, and `gamma`
+#' @returns a list with `mu`, `var` and `alpha`
+ser_natural2mean <- function(qnat){
+  qb <- do.call(rbind, purrr::map2(qnat$eta1, qnat$eta2, ~unlist(normal_natural2mean(.x, .y))))
+  q <- list(mu = qb[,1], var = qb[,2])
+  q$alpha <- categorical_natural2mean(qnat$gamma)
+  return(q)
 }
 
 #' Update q SER
@@ -149,10 +170,13 @@ categorical_update <- function(pi, pi_new, lambda){
 #' @param q1 an SER posterior
 #' @param q2 an SER posterior
 #' @param lambda in [0, 1], how much to weight q1
-update_q_ser <- function(q1, q2, lambda){
-    q <- normal_update(q1$mu, q1$var, q2$mu, q2$var, lambda=lambda)
-    q$alpha <- categorical_update(q1$alpha, q2$alpha, lambda=lambda)
-    return(q)
+update_q_ser <- function(q1nat, q2nat, lambda){
+  qnat <- list(
+    eta1 = lambda * q1nat$eta1 + (1 - lambda) * q2nat$eta1,
+    eta2 = lambda * q1nat$eta2 + (1 - lambda) * q2nat$eta2,
+    gamma = lambda * q1nat$gamma + (1 - lambda) * q2nat$gamma
+  )
+  return(qnat)
 }
 ```
 
@@ -227,51 +251,163 @@ initialize_q_ser <- function(p, prior_variance=1){
 ```
 
 ```{r kl_functions}
-kl_ser <- function(q1, q2){
-  kl <- logisticsusie:::categorical_kl(q1$alpha, q2$alpha)
-  kl <- kl + sum(q1$alpha * logisticsusie:::normal_kl(q1$mu, q1$var, q2$mu, q2$var))
+kl_ser <- function(q1, q2, compute_kl_gamma = T, compute_kl_b = T){
+  kl <- ifelse(
+    compute_kl_gamma,
+    logisticsusie:::categorical_kl(q1$alpha, q2$alpha),
+    0
+  )
+  kl <- ifelse(
+    compute_kl_b,
+    kl + sum(q1$alpha * logisticsusie:::normal_kl(q1$mu, q1$var, q2$mu, q2$var)),
+    kl
+  )
   return(kl)
 }
 
-kl_ser_sym <- function(q1, q2){
-  kl_ser(q1, q2) + kl_ser(q2, q1)
+kl_ser_sym <- function(q1, q2, ...){
+  kl_ser(q1, q2, ...) + kl_ser(q2, q1, ...)
 }
 ```
 
 
 ```{r stochastic_ser_function}
-stochastic_ser <- function(X, y, fit, l, niter=100, q_init=NULL, history=F, ser_fun=NULL, sample_b=T){
-  # 0: setup
-  p <- ncol(fit$alpha)
-  
-  # if no ser specified, default to linear
-  if(is.null(ser_fun)){
-    ser_fun = linear_ser
-  }
-  
-  if(is.null(q_init)){      # initialize posterior if not provided
-    o <- sample_offset(fit, X, l=l, sample_b = sample_b)
-    post <- ser_fun(X, y, o)
-  } else{
-    post <- q_init
-  }
-  
-  # run stochastic updates for 100 iterations
+#' take an average of the natural parameters
+average_q <- function(qs, history=T){
   post_history <- list()
-  for (iter in 1: niter){
-    # 1. sample the L-1 effects (removing effect l)
-    o <- sample_offset(fit, X, l=l, sample_b=sample_b)
-    
-    # 2. fit SER with sampled offset
-    ser <- ser_fun(X, y, o)
-
-    # 3. keep running average of natural parameters
-    post <- update_q_ser(post, ser, 1 - 1/(iter + 1))
+  M <- length(qs)
+  
+  # record natural parameter
+  post <- ser_mean2natural(qs[[1]])
+  post_history[[1]] <- qs[[1]]
+  for (m in 2:M){
+    # combine natural parameters in on-line average
+    qnat <- ser_mean2natural(qs[[m]])
+    post <- update_q_ser(post, qnat, 1 - 1/m)
     
     if(history){
-      post_history[[iter]] <- post
+      post_history[[m]] <- ser_natural2mean(post)
     }
-    
+  }
+  
+  if(history){
+    return(post_history)
+  } else{
+    # report mean parameterization
+    return(ser_natural2mean(post))
+  }
+}
+
+#' Take a montecarlo sample of q_{-l} and fit an SER
+mc_sample_ser <- function(X, y, fit, l, ser_fun, sample_b=T){
+  o <- sample_offset(fit, X, l=l, sample_b = sample_b)
+  post <- ser_fun(X, y, o)
+  return(post)
+}
+
+#' Samples from fit, and fits an SER with the offset
+#' then combines the results by averaging natural parameters
+stochastic_ser <- function(X, y, fit, l, M=100, q_init=NULL, history=F, ser_fun=NULL, sample_b=T){
+  # 0: setup
+  p <- ncol(fit$alpha)
+  if(is.null(ser_fun)){
+    ser_fun = linear_ser    # if no ser specified, default to linear
+  }
+  
+  # 1. fit M SERs (could parallelize, or save memory by doing sequentially)
+  post <- list()
+  for (i in 1:M){
+    post[[i]] <- with(data, mc_sample_ser(X, y, fit, l, ser_fun, sample_b = sample_b))
+  }
+
+  # 1. combine by averaging natural parameters
+  q_bar <- average_q(post, history=T)
+  return(q_bar)
+}
+
+```
+
+
+```{r fisher_weighting_function}
+# these are supposed to use fisher information to weight/combine SERs
+
+normal_moments <- function(mu, var, k){
+  if(k == 1){
+    return(mu)
+  } else if (k == 2){
+    return(var + mu^2)
+  }
+  
+  return (mu * normal_moments(mu, var, k-1) + 
+            (k-1) * var * normal_moments(mu, var, k-2))
+}
+
+normal_compute_I <- function(var){
+  c(1/var, 1/(2 * var^2))
+}
+
+categorical_compute_I <- function(pi){
+  pi <- head(pi, length(pi) - 1)
+  I <- diag(pi) - outer(pi, pi)
+  return(I)
+}
+
+update_qgamma <- function(I, Ieta, pi, compute_eta=F, diag=F){
+  pi_trunc <- pmin(pmax(pi, 0.001), 0.999)
+  pi_trunc <- pi_trunc / sum(pi_trunc)
+  pi <- pi_trunc
+  
+  if(diag){
+    newI = head(pi * (1-pi), length(pi-1))
+    neweta <- categorical_mean2natural(pi)
+    newIeta <- newI * neweta
+  } else{
+    newI <- categorical_compute_I(pi)
+    neweta <- categorical_mean2natural(pi)
+    newIeta <- (newI %*% neweta)[, 1]
+  }
+  
+  I <- I + newI
+  Ieta <- Ieta + newIeta
+  
+  if(compute_eta){
+    if(diag){
+      eta <- Ieta / eta
+    } else{
+      eta <- solve(I, Ieta)
+    }
+  } else{
+    eta <- NULL
+  }
+  return(list(I = I, Ieta = Ieta, eta=eta))
+}
+
+average_q2 <- function(qs, history=T, diag=F){
+  post_history <- list()
+  M <- length(qs)
+  
+  post <- qs[[1]]
+  
+  if(diag){
+    pi <- pmin(pmax(post$alpha, 0.01), 0.99)
+    I <- head(post$alpha * (1 - pi), length(pi) - 1)
+    eta <- categorical_mean2natural(pi)
+    Ieta <- I * eta
+  } else{
+    I <- categorical_compute_I(post$alpha)
+    eta <- categorical_mean2natural(post$alpha)
+    Ieta <- (I %*% eta)[,1]
+  }
+  gamma_post <- list(I = I, Ieta = Ieta, eta = eta)
+  
+  post_history[[1]] <- post
+  for (m in 2:M){
+    post <- update_q_ser(post, qs[[m]], 1 - 1/m)
+    gamma_post <- update_qgamma(gamma_post$I, gamma_post$Ieta, qs[[m]]$alpha, compute_eta=history)
+    if(history){
+      post$alpha <- categorical_natural2mean(gamma_post$eta)
+      post_history[[m]] <- post
+    }
   }
   
   if(history){
@@ -283,132 +419,7 @@ stochastic_ser <- function(X, y, fit, l, niter=100, q_init=NULL, history=F, ser_
 ```
 
 
-```{r sim1}
-# simulate data
-set.seed(5)
-sim <- logisticsusie::sim_susie(length_scale = 10)
-
-# standardize data
-data <- with(sim, {
-  y <- y - mean(y)
-  X <- scale(X)
-  list(y=y, X=X)
-})
-
-# fit SuSiE
-susie_fit <- with(data, susieR::susie(
-  X, y, L = 5, scaled_prior_variance = 1, estimate_prior_variance = F, estimate_residual_variance = F))
-susieR::susie_plot(susie_fit, 'PIP')
-susie_fit$var <- susie_fit$mu2 - susie_fit$mu^2
-susie_l3 <- list(
-  alpha=susie_fit$alpha[3,],
-  mu=susie_fit$mu[3,],
-  var=susie_fit$var[3,]
-)
-```
-
-### Stochastic Approdimation for Linear SER
-
-We use a toy simulation with 3 effects, and fit linear SuSiE as a baseline. Our goal here is to estimate $q(b_3, \gamma_3)$ using our stochastic approach. We fix the residual variance $\sigma^2 = Var(y)$ where $Var(y)$ is the sample variance, and the prior variance $\sigma^2_0 = 1$. We see that as we average the natural parameters across many draws of $\gamma_{-l}$, or $\{\gamma_{-l}, b_{-l}\}$ we approach the exact SER solution. Unsurprisingly, when we only sample over configurations, the convergence is much faster.
-
-```{r sim1_stochastic_optimization}
-# stochastic SER, sampling b
-max_iter <- 1000
-stochastic_l3_b <- with(data, stochastic_ser(
-  X, y, susie_fit, 3, niter=max_iter, history = T, sample_b = T))
-# compute symmetrized KL between stochastic SER and exact SER posterior 
-kls_b <- purrr::map_dbl(1:length(stochastic_l3_b), ~ kl_ser_sym(susie_l3, stochastic_l3_b[[.x]]))
-
-
-# stochastic SER, integrate over b
-stochastic_l3_Eb <- with(data, stochastic_ser(
-  X, y, susie_fit, 3, niter=max_iter, history = T, sample_b = F))
-kls_Eb <- purrr::map_dbl(1:length(stochastic_l3_Eb), ~ kl_ser_sym(susie_l3, stochastic_l3_Eb[[.x]]))
-```
-
-
-```{r sim1_kl_convergence}
-s <- 10
-kls_b_trunc <- tail(kls_b, -s)
-kls_Eb_trunc <- tail(kls_Eb, -s)
-yrange <- range(c(0, kls_b_trunc, kls_Eb_trunc))
-plot(kls_b_trunc,
-     col = 'blue',
-     xlab='iter',
-     ylab = 'KL_sym',
-     type = 'line',
-     ylim = yrange,
-     main='Symmetrized KL Divergence between SER fit stochastic SER fit'
-)
-lines(kls_Eb_trunc, col='red')
-
-abline(0, 0, col='black', lty='dotted')
-
-# Add a legend
-legend(
-  x = length(kls_Eb_trunc) * 0.8,
-  y = yrange[2] * 0.9,
-  legend = c('sample b', 'Eb'),
-  lty = c('solid', 'solid'),
-  col = c('blue', 'red'),
-  cex=0.8
-)
-```
-
-```{r sim1_posterior_alpha}
-par(mfrow = c(1, 2))
-plot(log(stochastic_l3_b[[max_iter]]$alpha),
-     log(susie_l3$alpha),
-     xlab = 'Stochastic Approximation',
-     ylab = 'SER',
-     main = 'sample b - log(alpha)')
-abline(0, 1, col='red')
-
-plot(log(stochastic_l3_Eb[[max_iter]]$alpha),
-     log(susie_l3$alpha),
-     xlab = 'Stochastic Approximation',
-     ylab = 'SER',
-     main = ' E[b] - log(alpha)')
-abline(0, 1, col='red')
-```
-
-```{r sim1_posterior_mu}
-par(mfrow = c(1, 2))
-plot(stochastic_l3_b[[max_iter]]$mu,
-     susie_l3$mu,
-     xlab = 'Stochastic Approximation',
-     ylab = 'SER',
-     main = 'sample b - mu')
-abline(0, 1, col='red')
-
-plot(stochastic_l3_Eb[[max_iter]]$mu,
-     susie_l3$mu,
-     xlab = 'Stochastic Approximation',
-     ylab = 'SER',
-     main = ' E[b] - mu')
-abline(0, 1, col='red')
-```
-
-Note: there seems to be some slight disagreement between our computation of the posterio variance and `susieR`'s. Since we are giving standardized `X` in this example, posterior variance is the same for all features.
-s
-```{r sim1_posterior_var}
-par(mfrow = c(1, 2))
-plot(stochastic_l3_b[[max_iter]]$var,
-     susie_l3$var,
-     xlab = 'Stochastic Approximation',
-     ylab = 'SER',
-     main = 'sample b - var')
-abline(0, 1, col='red')
-
-plot(stochastic_l3_Eb[[max_iter]]$var,
-     susie_l3$var,
-     xlab = 'Stochastic Approximation',
-     ylab = 'SER',
-     main = ' E[b] - var')
-abline(0, 1, col='red')
-```
-
-### Use stochastic SER to make stochastic SuSiE
+Use stochastic SER to make stochastic SuSiE
 
 ```{r stochastic_susie_functions}
 update_fit <- function(fit, ser, l){
@@ -438,7 +449,7 @@ stochastic_susie <- function(X, y, L, prior_variance=1., niter=100, ser_iter = 1
     for (l in 1:L){
       # TODO: set q_init = sers[[l]]?
       # right now it doesnt make much difference, only weighed as 1 sample
-      ser_l <- stochastic_ser(X, y, fit, l, niter=ser_iter, ser_fun=ser_fun, sample_b = sample_b)
+      ser_l <- stochastic_ser(X, y, fit, l, M=ser_iter, ser_fun=ser_fun, sample_b = sample_b)
       sers[[l]] <- ser_l
       fit <- update_fit(fit, ser_l, l)
     }
@@ -461,6 +472,357 @@ susie_plot2 <- function(fit, X, y = "PIP", ...) {
 }
 ```
 
+
+## SER Examples
+
+### Helpful functions 
+
+```{r stochast_ser_trace}
+stochastic_ser_trace <- function(data, susie_fit, which_l, M=5000, seed=NULL, ser_fun=linear_ser, sample_b=T){
+  if(!is.null(seed)){
+      set.seed(seed)
+  }
+  
+  # 0. extract exact SER posterior
+  susie_l <- list(
+    alpha=susie_fit$alpha[which_l,],
+    mu=susie_fit$mu[which_l,],
+    var=susie_fit$var[which_l,]
+  )
+  
+  # 1. Fit M MC SERs
+  post <- list()
+  for (i in 1:M){
+    post[[i]] <- with(data, mc_sample_ser(X, y, susie_fit, which_l, ser_fun, sample_b = sample_b))
+  }
+  
+  # 2. combine by averaging 
+  q_bar <- average_q(post, history=T)
+  
+  # 3. compute KL to exact posterior
+  
+  kl <- purrr::map_dbl(1:length(q_bar), ~ kl_ser_sym(susie_l, q_bar[[.x]]))
+  kl_gamma <- purrr::map_dbl(1:length(q_bar), ~ kl_ser_sym(susie_l, q_bar[[.x]], compute_kl_b=F))
+  
+  return(list(mc_ser = post, q_bar = q_bar, kl_gamma = kl_gamma, kl = kl, q_ser = susie_l))
+}
+```
+
+```{r kl_plot}
+plot_kl <- function(kls, colors, labels, xp=0.7, yp=0.1, ...){
+  yrange <- range(log10(unlist(kls) + 1e-20))
+
+  plot(log10(kls[[1]]),
+       col = colors[1],
+       xlab='iter',
+       ylab = 'log10(KL)',
+       type = 'line',
+       ylim = yrange,
+       ...
+  )
+  
+  if(length(kls) > 1){
+    for (i in 2:length(kls)){
+      lines(log10(kls[[i]]), col=colors[i])
+    }
+  }
+
+  
+  # Add a legend
+  legend(
+    x = length(kls[[1]]) * xp,
+    y = yrange[2] - abs(diff(yrange)) * yp,
+    legend = labels,
+    lty = rep('solid', length(colors)),
+    col = colors,
+    cex=0.8
+  )
+}
+```
+
+### Recovering a single SuSiE component: stochastic approdimation for Linear SER
+
+We use a toy simulation with 3 effects, and fit linear SuSiE as a baseline. Our goal here is to estimate $q(b_3, \gamma_3)$ using our stochastic approach. We fix the residual variance $\sigma^2 = Var(y)$ where $Var(y)$ is the sample variance, and the prior variance $\sigma^2_0 = 1$. We see that as we average the natural parameters across many draws of $\gamma_{-l}$, or $\{\gamma_{-l}, b_{-l}\}$ we approach the exact SER solution. Unsurprisingly, when we only sample over configurations, the convergence is much faster.
+
+```{r sim1}
+# simulate data
+set.seed(5)
+sim <- logisticsusie::sim_susie(length_scale = 10)
+
+# standardize data
+data <- with(sim, {
+  y <- y - mean(y)
+  X <- scale(X)
+  list(y=y, X=X)
+})
+
+# fit SuSiE
+susie_fit <- with(data, susieR::susie(
+  X, y, L = 5, scaled_prior_variance = 1, estimate_prior_variance = F, estimate_residual_variance = F))
+susieR::susie_plot(susie_fit, 'PIP')
+susie_fit$var <- susie_fit$mu2 - susie_fit$mu^2
+```
+
+#### Recover each SER
+
+```{r sim1_stochastic_ser_kl_gamma}
+ser1 <- stochastic_ser_trace(data, susie_fit, 1)
+ser2 <- stochastic_ser_trace(data, susie_fit, 2)
+ser3 <- stochastic_ser_trace(data, susie_fit, 3)
+
+plot_kl(
+  list(ser1$kl_gamma, ser2$kl_gamma, ser3$kl_gamma),
+  c('purple', 'green', 'blue'),
+  c('q(gamma_1)', 'q(gamma_2)', 'q(gamma_3)'),
+  main = 'Symmetrized KL to exact SER posterior'
+)
+```
+
+#### Look at full KL
+
+There is a minor discrepency between the way we compute the posterior variance
+and it's implimentation in SuSiE that keeps the `q(b | gamma)` component away from 0
+
+```{r sim1_stochastic_ser}
+set.seed(10)
+M <- 5000
+which_l <- 3
+
+# 0. extract exact SER posterior
+susie_l <- list(
+  alpha=susie_fit$alpha[which_l,],
+  mu=susie_fit$mu[which_l,],
+  var=susie_fit$var[which_l,]
+)
+
+# 1. Fit M MC SERs
+post <- list()
+for (i in 1:M){
+  post[[i]] <- with(data, mc_sample_ser(X, y, susie_fit, which_l, linear_ser, sample_b = F))
+}
+
+# 2. combine by averaging 
+q_bar <- average_q(post, history=T)
+
+# 3. compute KL to exact posterior
+kl_bar <- purrr::map_dbl(1:length(q_bar), ~ kl_ser_sym(susie_l, q_bar[[.x]]))
+kl_bar_b <- purrr::map_dbl(1:length(q_bar), ~ kl_ser_sym(susie_l, q_bar[[.x]], compute_kl_gamma=F))
+kl_bar_gamma <- purrr::map_dbl(1:length(q_bar), ~ kl_ser_sym(susie_l, q_bar[[.x]], compute_kl_b=F))
+
+plot_kl(
+  list(kl_bar, kl_bar - kl_bar_gamma, kl_bar_gamma),
+  c('red', 'blue', 'purple'),
+  c('stochastic SER', 'E[q(b | gamma)]', 'q(gamma)'),
+  main = 'Symmetrized KL to exact SER posterior'
+)
+```
+
+
+
+### A harder example
+
+```{r ser_sim2}
+# simulate data
+set.seed(110)
+sim <- logisticsusie::sim_susie(p=100, length_scale = 100, idx = c(20, 40, 60))
+
+# standardize data
+data <- with(sim, {
+  y <- y - mean(y)
+  X <- scale(X)
+  list(y=y, X=X)
+})
+
+# fit SuSiE
+susie_fit <- with(data, susieR::susie(
+  X, y, L = 5, scaled_prior_variance = 1, estimate_prior_variance = F, estimate_residual_variance = F))
+susieR::susie_plot(susie_fit, 'PIP')
+susie_fit$var <- susie_fit$mu2 - susie_fit$mu^2
+```
+
+```{r}
+ser1 <- stochastic_ser_trace(data, susie_fit, 1)
+ser2 <- stochastic_ser_trace(data, susie_fit, 2)
+ser3 <- stochastic_ser_trace(data, susie_fit, 3)
+
+plot_kl(
+  list(ser1$kl_gamma, ser2$kl_gamma, ser3$kl_gamma),
+  c('purple', 'green', 'blue'),
+  c('q(gamma_1)', 'q(gamma_2)', 'q(gamma_3)'),
+  main = 'Symmetrized KL to exact SER posterior'
+)
+```
+
+#### Integrate over effect size
+
+Integrating over effects seems to have less of an impact in this harder example?
+
+```{r}
+ser1 <- stochastic_ser_trace(data, susie_fit, 1, sample_b=F, M=2000)
+ser2 <- stochastic_ser_trace(data, susie_fit, 1, sample_b=T, M=2000)
+
+plot_kl(
+  list(ser1$kl_gamma, ser2$kl_gamma),
+  c('blue', 'red'),
+  c('E[b]', 'sample b'),
+  main = 'Symmetrized KL to exact SER posterior'
+)
+```
+
+```{r ser_sim2_mc_parameters}
+q_sample_b <- ser1$mc_ser[[1]]
+q_Eb <- ser2$mc_ser[[1]]
+q_ser <- ser1$q_ser
+
+par(mfrow = c(1, 2))
+plot(log(q_sample_b$alpha),
+     log(q_ser$alpha),
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = 'sample b - log(alpha)')
+abline(0, 1, col='red')
+
+plot(log(q_Eb$alpha),
+     log(q_ser$alpha),
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = ' E[b] - log(alpha)')
+abline(0, 1, col='red')
+
+par(mfrow = c(1, 2))
+plot(q_sample_b$mu,
+     q_ser$mu,
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = 'sample b - mu')
+abline(0, 1, col='red')
+
+plot(q_Eb$mu,
+     q_ser$mu,
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = 'E[b] - mu')
+abline(0, 1, col='red')
+```
+
+
+```{r ser_sim2_posterior_parameters}
+m <- 1000
+q_sample_b <- ser1$q_bar[[m]]
+q_Eb <- ser2$q_bar[[m]]
+q_ser <- ser1$q_ser
+
+par(mfrow = c(1, 2))
+plot(log(q_sample_b$alpha),
+     log(q_ser$alpha),
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = 'sample b - log(alpha)')
+abline(0, 1, col='red')
+
+plot(log(q_Eb$alpha),
+     log(q_ser$alpha),
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = ' E[b] - log(alpha)')
+abline(0, 1, col='red')
+
+par(mfrow = c(1, 2))
+plot(q_sample_b$mu,
+     q_ser$mu,
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = 'sample b - mu')
+abline(0, 1, col='red')
+
+plot(q_Eb$mu,
+     q_ser$mu,
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = 'E[b] - mu')
+abline(0, 1, col='red')
+```
+
+
+### Logistic SER
+
+```{r logistic_susie_ser}
+# simulate data
+set.seed(13)
+sim <- logisticsusie::sim_susie(length_scale = 20)
+
+# standardize data
+data <- with(sim, {
+  y <- y
+  X <- scale(X)
+  list(y=y, X=X)
+})
+
+tic('ibss')
+ibss_fit <- with(data, logisticsusie::ibss_from_ser2(
+  X, y, L=5, prior_variance = 1, ser_function = logisticsusie::fit_uvb_ser))
+toc()
+
+susie_plot2(ibss_fit, data$X)
+```
+
+```{r}
+fit_uvb_ser2 <- function(X, y, o){logisticsusie::fit_uvb_ser(X, y, o$mu)}
+
+fit_uvb_ser_re <- logisticsusie::fit_uvb_ser_re # needs `sample_b = F`
+
+
+# with(data, mc_sample_ser(X, y, ibss_fit, 3, fit_uvb_ser_re, sample_b = F))
+# with(data, mc_sample_ser(X, y, ibss_fit, 3, fit_uvb_ser2, sample_b = T))
+# with(data, mc_sample_ser(X, y, ibss_fit, 3, fit_uvb_ser2, sample_b = F))
+
+# uvb, sample b
+tic()
+ser1 <- stochastic_ser_trace(data, ibss_fit, 2, ser_fun=fit_uvb_ser2, M=1000, sample_b = T)
+toc()
+
+tic()
+ser2 <- stochastic_ser_trace(data, ibss_fit, 2, ser_fun=fit_uvb_ser2, M=1000, sample_b = T)
+toc()
+
+tic()
+ser3 <- stochastic_ser_trace(data, ibss_fit, 3, ser_fun=fit_uvb_ser2, M=1000, sample_b = T)
+toc()
+
+plot_kl(
+  list(ser1$kl_gamma, ser2$kl_gamma, ser3$kl_gamma),
+  c('purple', 'green', 'blue'),
+  c('q(gamma_1)', 'q(gamma_2)', 'q(gamma_3)'),
+  main = 'Symmetrized KL to exact SER posterior'
+)
+```
+
+```{r logistic_ser_compar_posterior}
+m <- 1000
+q_sample_b <- ser1$q_bar[[m]]
+q_ser <- ser1$q_ser
+
+par(mfrow = c(1, 2))
+plot(log(q_sample_b$alpha),
+     log(q_ser$alpha),
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = 'log(alpha)')
+abline(0, 1, col='red')
+
+plot(q_sample_b$mu,
+     q_ser$mu,
+     xlab = 'Stochastic Approximation',
+     ylab = 'SER',
+     main = 'mu')
+abline(0, 1, col='red')
+```
+
+
+
+
+## SuSiE Examples
+
 ### Linear SuSiE Test
 
 ```{r sim2_susie}
@@ -478,7 +840,7 @@ data <- with(sim, {
 })
 
 tic('ibss')
-ibss_fit <- with(data, logisticsusie::ibss_from_ser(
+ibss_fit <- with(data, logisticsusie::ibss_from_ser2(
   X, y, L=5, prior_variance = 1, ser_function = linear_ser))
 toc()
 
@@ -525,7 +887,7 @@ data <- with(sim, {
 })
 
 tic('ibss')
-ibss_uvb_fit <- with(data, logisticsusie::ibss_from_ser(
+ibss_uvb_fit <- with(data, logisticsusie::ibss_from_ser2(
   X, y, L=5, prior_variance = 1, ser_function = logisticsusie::fit_uvb_ser))
 toc()
 
@@ -543,6 +905,12 @@ susie_plot2(ibss_uvb_fit, data$X, main ='IBSS-UVB')
 ```
 
 
+
+### Poisson regression test
+
+```{r}
+
+```
 
 
 

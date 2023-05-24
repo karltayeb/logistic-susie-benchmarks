@@ -1,0 +1,424 @@
+---
+title: "GLM-SER poor performance, and GLM-SuSiE recovery"
+author: "Karl Tayeb"
+date: "2022-02-07"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+We've observed that GLM logistic SER and SuSiE performs poorly when there is only one non-zero effect, but it recovers performance when there are multiple real effects. Why does the SER and SuSiE perform poorly when the number of true effect variables $L^* = 1$? Why does performance improve when $L^* > 1$
+
+## $L^* = 1$
+
+### Explaination of GLM-SER
+
+Here is the function for fitting "GLM-SER". For each variable $i$ we fit a univariate logistic regression using `glm`. Then we use the effect estimate and standard deviation to estimate the Bayes Factor using Wakefield's approximate Bayes Factor $ABF_i$.
+
+Then for data $\mathcal D = \{X, {\bf y} \}$, we approximate the SER posterior:
+
+$$
+p(\gamma | \mathcal D) \approx \frac{ABF_i}{\sum_j ABF_j}
+$$
+$$
+\begin{aligned}
+p(b | \gamma = i, \mathcal D) \approx \mathcal N(\mu_i, \sigma^2_i),\\
+\sigma^2_i = \left( \frac{1}{\sigma^2_0} + \frac{1}{s^2_i} \right)^{-1},\\
+\mu_i = \frac{\sigma^2_j}{s^2_i} \hat \beta_i.
+\end{aligned}
+$$
+
+```{r}
+fit_glm_ser <- function (X, y, o = NULL, prior_variance = 1, estimate_intercept = T, 
+    prior_weights = NULL, family = "binomial") {
+    p <- ncol(X)
+    betahat <- numeric(p)
+    shat2 <- numeric(p)
+    intercept <- rep(0, p)
+    if (is.null(o)) {
+        o <- rep(0, length(y))
+    }
+    for (j in 1:p) {
+        if (estimate_intercept) {
+            log.fit <- glm(y ~ X[, j] + 1 + offset(o), family = family)
+            intercept[j] <- unname(coef(log.fit)[1])
+        }
+        else {
+            log.fit <- glm(y ~ X[, j] - 1 + offset(o), family = family)
+        }
+        log.fit.coef <- summary(log.fit)$coefficients
+        betahat[j] <- ifelse(is.na(log.fit.coef[1 + estimate_intercept, 
+            1]), 0, log.fit.coef[1 + estimate_intercept, 1])
+        shat2[j] <- ifelse(is.na(log.fit.coef[1 + estimate_intercept, 
+            2]), Inf, log.fit.coef[1 + estimate_intercept, 2]^2)
+    }
+    lbf <- dnorm(betahat, 0, sqrt(prior_variance + shat2), log = TRUE) - 
+        dnorm(betahat, 0, sqrt(shat2), log = TRUE)
+    lbf[is.infinite(shat2)] <- 0
+    if (is.null(prior_weights)) {
+        prior_weights <- rep(1/p, p)
+    }
+    maxlbf <- max(lbf)
+    w <- exp(lbf - maxlbf)
+    w_weighted <- w * prior_weights
+    weighted_sum_w <- sum(w_weighted)
+    alpha <- w_weighted/weighted_sum_w
+    post_var <- 1/((1/shat2) + (1/prior_variance))
+    post_mean <- (1/shat2) * post_var * betahat
+    post_mean2 <- post_var + post_mean^2
+    lbf_model <- maxlbf + log(weighted_sum_w)
+    null_likelihood <- dbinom(y, 1, mean(y), log = T)
+    loglik <- lbf_model + null_likelihood
+    return(list(alpha = alpha, mu = post_mean, intercept = intercept, 
+        var = post_var, lbf = lbf, lbf_model = lbf_model, prior_variance = prior_variance, 
+        loglik = loglik))
+}
+```
+
+
+Here is our simulation function. 
+Note the defaults are to simulate an SER with the first variable having non-zero effect
+
+```{r}
+sigmoid <- function(x){1/(1 + exp(-x))}
+
+simulate <- function (n = 1000, p = 50, L = 1, N = 1, ls = 50,
+                      beta=rep(1, L), beta0 = 0,
+                      idx=(seq(L)*10 -9)){
+    X <- logisticsusie:::sim_X(n, p, length_scale = ls)
+    Z <- matrix(rep(1, n), nrow = n)
+    logits <- beta0 + Matrix::drop(X[, idx, drop=F] %*% beta)
+    p <- sigmoid(logits)
+    y <- rbinom(n, N, p)
+    data <- list(X = X, Z = Z, y = y, N = N, logits = logits, 
+        effect = beta, intercept = beta0, idx = idx)
+    return(data)
+}
+
+
+X <- logisticsusie:::sim_X(1000, 50, length_scale=50)
+image(cor(X))
+```
+
+### Simulation
+
+Here we generate 100 simulations. In each simulation we simulate $p=50$ correlated variables 
+for $n=1000$ individuals. Only the first has non-zero effect. Then we generate $y$ according to a logistic regression model.
+
+We fit the GLM-SER and "UVB-SER", which uses the Jaakola and Jordan variational approximation for 
+each univariate regression. It is worth noting that (1) the variational approximation is a lower bound to the exact BF, while the ABF is not and (2) the variational approximation has a *variational parameter* that adjusts the approximation made for each observation. The ABF is also an approximation to the exact BF but it is not guaranteed to be a lower bound. While it is convenient that the ABF can be computed directly from MLE of the effect and its' standard deviation there is no variational parameter tune tune the approximation. Instead, this approximation relies on an asymptotic normality argument, appealing to the limiting behavior of the effect estimate as the sample size grows large.
+
+Before we've seen that the univariate VB approximation gives BFs that are quite close to the exact BF, and importantly the error of the BF approximation (the difference between the exact BF and the approximate BF) is quite uniform across a range of scenarios at a fixed sample size. In short, in what follows we should trust the UVB estimates.
+
+```{r functions}
+library(dplyr)
+
+sim_driver <- function(reps=100, sim_args, scaleX=F){
+  sims <- purrr::map(1:reps, ~rlang::exec(simulate, !!!sim_args))
+  if(scaleX){
+    for(i in 1:reps){
+      sims[[i]]$X <- scale(sims[[i]]$X)
+    }
+  }
+  glm_ser <- purrr::map(1:reps, ~with(sims[[.x]], fit_glm_ser(X, y)))
+  uvb_ser <- purrr::map(1:reps, ~with(sims[[.x]], logisticsusie::uvbser(X, y)))
+  return(list(sims=sims, glm_ser = glm_ser, uvb_ser = uvb_ser))
+}
+
+plot_pips_and_lbfs <- function(sims){
+  uvb_ser <- sims$uvb_ser
+  glm_ser <- sims$glm_ser
+  
+  par(mfrow=c(1, 2))
+  uvb_pips <- unlist(purrr::map(uvb_ser, ~.x$alpha))
+  glm_pips <- unlist(purrr::map(glm_ser, ~.x$alpha))
+  plot(uvb_pips, glm_pips, main='SER PIPs'); abline(0, 1, col='red')
+  
+  uvb_lbfs <- unlist(purrr::map(uvb_ser, ~.x$lbf))
+  glm_lbfs <- unlist(purrr::map(glm_ser, ~.x$lbf))
+  plot(uvb_lbfs, glm_lbfs, main='SER logBFs'); abline(0, 1, col='red')
+}
+
+make_cs_report <- function(sims){
+  uvb_ser <- sims$uvb_ser
+  glm_ser <- sims$glm_ser
+  sims <- sims$sims
+  reps <- length(sims)
+  
+  get_cs <- logisticsusie:::get_cs
+
+  glm_coverage <- mean(purrr::map_lgl(1:reps, ~ any(sims[[.x]]$idx %in% get_cs(glm_ser[[.x]]$alpha)$cs)))
+  uvb_coverage <- mean(purrr::map_lgl(1:reps, ~any(sims[[.x]]$idx %in% get_cs(uvb_ser[[.x]]$alpha)$cs)))
+  
+  glm_cssize <- purrr::map_int(1:reps, ~length(get_cs(glm_ser[[.x]]$alpha)$cs))
+  uvb_cssize <- purrr::map_int(1:reps, ~length(get_cs(uvb_ser[[.x]]$alpha)$cs))
+  
+  glm_rank <- purrr::map_int(1:reps, ~min(which(rev(order(glm_ser[[.x]]$alpha)) %in% sims[[.x]]$idx)))
+  uvb_rank <- purrr::map_int(1:reps, ~min(which(rev(order(uvb_ser[[.x]]$alpha)) %in% sims[[.x]]$idx)))
+  
+  cat(paste0('95% CS coverage:\n\tGLM-SER coverage = ', glm_coverage,
+             '\n\tUVB-SER coverage = ', uvb_coverage))
+  
+  cat('\n\nGLM-SER rank of causal variable\n')
+  cat(names(table(glm_rank)))
+  cat('\n')
+  cat(table(glm_rank)) 
+  cat('\n')
+
+  cat('\nUVB-SER rank of causal variable\n')
+  cat(names(table(uvb_rank)))
+  cat('\n')
+  cat(table(uvb_rank))
+  cat('\n')
+  
+  cat(paste0('Mean CS size\n\tGLM-SER=', mean(glm_cssize),
+             '\n\tUVB-SER=', mean(uvb_cssize)))
+}
+
+plot_causal_lbf_vs_max_lbf <- function(sim){
+    uvb_ser <- sim$uvb_ser
+    glm_ser <- sim$glm_ser
+    sims <- sim$sims
+    reps <- length(sims)
+    
+    par(mfrow=c(1, 2))
+    glm_casual_lbf <- purrr::map_dbl(1:reps, ~max(glm_ser[[.x]]$lbf[sims[[.x]]$idx]))
+    glm_max_lbf <- purrr::map_dbl(1:reps, ~max(glm_ser[[.x]]$lbf))
+    
+    # plot 1
+    plot(glm_casual_lbf, glm_max_lbf,
+         main='GLM-SER: Causal logBF vs maximum logBF')
+    abline(0, 1, col='red')
+    
+    # get index of simulation with largest descrepency between max ABF and causal ABF-- 
+    sim_idxs <- which(glm_max_lbf - glm_casual_lbf > 0)
+    if(length(sim_idxs) == 0){
+      sim_idxs <- c(1)
+    }
+    sim_idx <- sim_idxs[1]
+    
+    sim <- sims[[sim_idx]]
+    uvb_fit <- uvb_ser[[sim_idx]]
+    glm_fit <- glm_ser[[sim_idx]]
+    
+    plot(uvb_fit$alpha, main='PIPs');
+    points(glm_fit$alpha, col='red')
+    
+    
+    res <- list()
+    for(sim_idx in sim_idxs){
+      sim <- sims[[sim_idx]]
+      top_var <- which.max(glm_ser[[sim_idx]]$lbf)
+      
+      y <- sim$y
+      x1 <- sim$X[,1]
+      x2 <- sim$X[,top_var]
+      
+      lr1 <- glm(y ~x1, family='binomial')
+      lr2 <- glm(y ~x2, family='binomial')
+      
+      summary(lr1)$coef
+      summary(lr2)$coef
+      
+      res[[as.character(sim_idx)]] = list(top_var = top_var, lr1=summary(lr1)$coef, lr2=summary(lr2)$coef)
+    }
+    return(res)
+}
+```
+
+
+```{r}
+set.seed(1)
+sim1_args <- list(L=1, beta0=-2, beta=1)
+sim1 <- sim_driver(reps=100, sim1_args)
+```
+
+Here we see that there is substantial disagreement between the ABFs and the UVB-BFs.
+The ABFs tend to underestimate the very large BFs. 
+Furthermore the rank of ABFs differs from those of the UVB-BFs leading to striking disagreement in the PIPs (which are normalized BFs).
+
+```{r}
+plot_pips_and_lbfs(sim1)
+```
+
+Despite the discrepancy both in BFs, both SERs achieve good coverage. However, GLM SER more often fails to assign the actual causal variable the largest PIP. Aggregated across many simulations this would lead to the inflate FDP we see. Notably, GLM-ser gives bigger 95% CSs compared to UVB-SER.
+
+```{r}
+make_cs_report(sim1)
+```
+
+Here, I pull out an example where the the ABF at the causal variable is less than the maximum ABF across all variables. The causal variable (the first variable) is still in the CS but it's the 4th largest PIP
+
+```{r}
+u <- plot_causal_lbf_vs_max_lbf(sim1)
+u$`4`
+```
+
+Indeed, the 3rd variable `x3` has a slightly larger z-score than the causal variable x1, as computed by `glm`. The JJ univariate regression (correctly?) gives a larger BF to x1 compared to x3.
+
+
+### Scaling $X$
+
+Scaling $X$ to unit variance doesn't resolve the problem.
+While scaling $X$ effectively changes the prior on $b$, there is enough data here 
+that changing the prior doesn't qualitatively change our inference on which variable has non-zero effect.
+
+```{r}
+set.seed(1)
+sim2 <- sim_driver(reps=20, sim1_args, scaleX=T)
+plot_pips_and_lbfs(sim2)
+```
+
+### Smaller-effect simulation -- GLM and UVB agree
+
+If we repeat the simulation with a smaller effect size, the discrepency between SERs
+disappears. The BF approximations are comparable.
+
+For $\beta = 0.1$ we see a strong agreement in the BFs.
+
+```{r}
+set.seed(2)
+sim_small_beta1_args <- list(beta0=-2, beta=0.1)
+sim_small_beta1 <- sim_driver(reps=20, sim_small_beta1_args)
+plot_pips_and_lbfs(sim_small_beta1)
+make_cs_report(sim_small_beta1)
+ex_small_beta1 <- plot_causal_lbf_vs_max_lbf(sim_small_beta1)
+```
+
+For $\beta=0.2$ we also see good agreement between the ABF and the UVB-BF.
+
+```{r}
+set.seed(2)
+sim_small_beta2_args <- list(beta0=-2, beta=0.2)
+sim_small_beta2 <- sim_driver(reps=20, sim_small_beta2_args)
+plot_pips_and_lbfs(sim_small_beta2)
+make_cs_report(sim_small_beta2)
+ex_small_beta2 <- plot_causal_lbf_vs_max_lbf(sim_small_beta2)
+```
+
+
+For $\beta=0.5$ we see that the ABFs start underestimating the large BFs, but the ordering of BFs largely agree. Because our approximation error increases as the evidence increases, we should expect wider credible sets with ABF. We systematically underestimate the evidence for the strongest effects. This should result in conservative CSs.
+
+```{r}
+set.seed(2)
+sim_small_beta3_args <- list(beta0=-2, beta=0.5)
+sim_small_beta3 <- sim_driver(reps=20, sim_small_beta3_args)
+plot_pips_and_lbfs(sim_small_beta3)
+make_cs_report(sim_small_beta3)
+ex_small_beta3 <- plot_causal_lbf_vs_max_lbf(sim_small_beta3)
+```
+
+### Larger sample size simulation -- GLM and UVB agree
+
+If we repeat the simulation with a larger sample size, the ABF still underestimates the BF for extremely large BFs, but the discrepancy in the ordering of the BFs largely goes away. Here we increase the sampel size by an order of magnitude to $n=10,000$
+
+```{r}
+set.seed(2)
+sim_large_n_args <- list(n=10000, beta0=-2, beta=1)
+sim_large_n <- sim_driver(reps=20, sim_large_n_args)
+plot_pips_and_lbfs(sim_large_n)
+make_cs_report(sim_large_n)
+
+sim_large_n$glm_ser[[1]]$lbf
+ex_large_n <- plot_causal_lbf_vs_max_lbf(sim_large_n)
+```
+
+
+## Recovery of the SER when $L^* > 1$
+
+Now we fit a mispecified model. There are multiple true effects, but our model only allows for one.
+
+### Correlated effect variables
+
+When the two effect variables are too correlated we run into trouble.
+Interestingly, GLM-SER achieves good results here while the UVB-SER does not. 
+The ABF tends to be bigger around one of the two signals so the CS will contain one of the true signals.
+
+In contrast the UVB-SER CSs fall "in-between" the two signals-- selecting variables that are correlated with both.
+
+```{r}
+set.seed(12)
+sim4_args <- list(L=2, beta0=-2, beta=c(1, 1), idx=c(1, 10))
+sim4 <- sim_driver(reps=20, sim4_args)
+```
+
+
+```{r}
+plot_pips_and_lbfs(sim4)
+make_cs_report(sim4)
+ex4 <- plot_causal_lbf_vs_max_lbf(sim4)
+```
+
+```{r}
+idx <- 5
+plot(sim4$uvb_ser[[idx]]$alpha)
+points(sim4$glm_ser[[idx]]$alpha, col='red')
+abline(v=1)
+abline(v=10)
+
+cor(sim4$sims[[idx]]$X[, c(1, 10)])
+```
+
+```{r}
+fit_poly_sers <- function (sim){
+  sims <- sim$sims
+  reps <- length(sims)
+  poly_ser <- purrr::map(
+    1:reps, ~with(sims[[.x]], polysusie::logistic_polysusie(
+      X, y, L=1, left=-10, right=10, M=10)))
+  return(poly_ser)
+}
+```
+
+
+Polynomial SER, UVB-SER, and Bayes-SER (computed via quadrater) all agree on the $0$-coverage answer!
+
+```{r}
+poly_ser <- fit_poly_sers(sim4)
+poly_ser[[1]]$cs$L1
+
+sim <- sim4$sims[[1]]
+bayes_ser <- with(sim, logisticsusie::fit_quad_ser(X, y))
+```
+
+```{r}
+get_cs <- polysusie:::get_cs
+
+cat('\n')
+get_cs(sim4$uvb_ser[[1]]$alpha)
+
+cat('\n')
+get_cs(bayes_ser$alpha)
+```
+### Uncorrelated effect variables
+
+What if we repeat the experiment, but with uncorrelated effect variables?
+
+```{r}
+set.seed(12)
+sim5_args <- list(L=2, beta0=-2, beta=c(1, 1), idx=c(1, 50))
+sim5 <- sim_driver(reps=20, sim5_args)
+```
+
+
+```{r}
+plot_pips_and_lbfs(sim5)
+make_cs_report(sim5)
+```
+
+```{r}
+idx <- 5
+plot(sim5$uvb_ser[[idx]]$alpha)
+points(sim5$glm_ser[[idx]]$alpha, col='red')
+abline(v=1)
+abline(v=50)
+```
+
+If we spread them apart (two independent signals): compared to the $L^*=1$ scenario we see far more agreement in the *rank* of the PIPs. Maybe when there are multiple signals the SER gets more "shots on goal"-- the SER posterior will concentrate on the strongest of multiple effect (although from what we see rank errors happen more in the stronger effect? so it
+s not clear why we do better here-- except that in this particular example there is some correlation among all variables and the two effect variables are least correlated).
+
+Across the simulation we see near $100\%$ coverage, and a similar $CS$ size as in the $L^*=1$ case.
+
+

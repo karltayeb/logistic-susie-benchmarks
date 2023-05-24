@@ -34,14 +34,14 @@ make_yusha_fit_spec <- function(){
     'uvb_ser', 'fit_uvb_ser', list(),
     'glm_ser', 'fit_glm_ser', list(),
     'linear_ser', 'fit_linear_susie', list(L=1),
-    'quad_ser', 'fit_quad_ser', list(n=2^8),
+    'bayes_ser', 'fit_bayes_ser', list(),
     # SuSiE
     'linear_susie_L10', 'fit_linear_susie', list(L=10),
     'binsusie_L10', 'fit_binsusie_wrapped', list(L=10, prior_variance=1, estimate_prior_variance=F),
-    'binsusie2_L10', 'fit_binsusie_wrapped', list(L=10, estimate_prior_variance=T, prior_variance=1),
-    'ibss2m_L10', 'ibss2m_jax_nosparse', list(L=10),
+    #'binsusie2_L10', 'fit_binsusie_wrapped', list(L=10, estimate_prior_variance=T, prior_variance=1),
+    #'ibss2m_L10', 'ibss2m_jax_nosparse', list(L=10),
     'ibss_uvb_L10', 'fit_ibss_uvb', list(L=10),
-    'ibss_vb_L10', 'fit_ibss_vb', list(L=10)
+    #'ibss_vb_L10', 'fit_ibss_vb', list(L=10)
   ) %>%
   mutate(fit_sym = rlang::syms(fit_fun))
   return(spec)
@@ -56,7 +56,7 @@ fit_model2 <- function(X, y, method, fit_fun, fit_args = list()){
 yusha_example_targets <- list(
     tar_target(yusha_data, yusha_example_data()$bindata),
     tar_target(yusha_fit_spec, make_yusha_fit_spec()),
-    tar_target(yusha_fits, 
+    tar_target(yusha_fits,
       yusha_fit_spec %>%
         dplyr::rowwise() %>%
         dplyr::mutate(
@@ -66,7 +66,7 @@ yusha_example_targets <- list(
         pattern = map(yusha_fit_spec)
     ),
     tar_target(yusha_data500, yusha_example_data(500)$bindata),
-    tar_target(yusha_fits500, 
+    tar_target(yusha_fits500,
       yusha_fit_spec %>%
         dplyr::rowwise() %>%
         dplyr::mutate(

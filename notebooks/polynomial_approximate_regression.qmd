@@ -1,0 +1,836 @@
+---
+title: "Polynomial approximation variational Bayes"
+date: 2023-03-06
+format: html
+editor: visual
+---
+
+```{r setup}
+library(dplyr)
+library(pracma)
+library(tictoc)
+```
+
+## Computation
+
+### Chebyshev approximations
+
+Chebyshev polynomials can be used to approximate functions on the interval $[-1, 1]$ (and then also, on any finite interval). $f(x) \approx \sum c_k T_k(x)$. We compute the coefficients of $c_k$ for $k = 0, \dots K$.
+
+In the code below we use `pracma::polyApprox` which implement a scheme of evaluate the coefficients for $f$. This is essentially done via quadrature, noting that
+
+$$
+\langle f, P_k \rangle =  \int_{-1}^1 f(x)P_k(x) dx = c_k ||P_k||^2
+$$
+
+A $K+1$ point quadrature suffices to recover $c_k$ exactly. To construct an approximation for $f$ on $[a, b]$ we use the change of variable $y = \frac{1}{b- a} (x - a)$
+
+```{r}
+make_approximation <- function(f, R, n, plot=F){
+  p <- rev(pracma::polyApprox(f, -R, R, n =n)$p)
+  if(plot){
+    S <- R + 2
+    x <- seq(-S, S, by=0.1)
+    plot(f, -S, S)
+    lines(x, polyval2(p, x), col='red', lty='dotted')
+    abline(v=-R); abline(v=R)
+  }
+  return(p)
+}
+
+make_approximation(loglik0, 10, 6)
+```
+
+### Scaling and shifting polynomials
+
+$$
+f(bx) = \sum m_k (bx)^k = \sum m_k b^kx^k = \sum (m_k b^k) x^k = f_b(x)
+$$
+
+
+$$
+f(x - c) 
+= \sum m_k (x -c)^k 
+= \sum_k m_k \sum_{j \leq k} {k \choose j} x^j c^{k-j}
+= \sum_j \left(\sum_{k \geq j} {k \choose j} c^{k-j}\right) x^j
+$$
+
+
+```{r}
+#' p coefficients of a polynomial in increasing order
+polyval2 <- function(p, x){pracma::polyval(rev(p), x)}
+
+#' f(x + c) = f2(x)
+shift_polynomial <- function(p, c){
+  # construct map
+  K <- length(p) - 1
+  M <- matrix(nrow= K+1, ncol=K+1)
+  for(j in 0:K){
+    for(k in 0:K){
+      M[j+1, k+1] <- choose(k, j) * c**(k - j)
+    }
+  }
+  
+  coef_new <- (M %*% p)[, 1]
+  return(coef_new)
+}
+
+# change back to original scale
+# f(bx) = f2(x)
+scale_polynomial <- function(p, b){
+  K <- length(p) - 1
+  coef_new <- p * sapply(0:K, function(k) b**k)
+  return(coef_new)
+}
+```
+
+
+### Laplace approximation to polynomial
+
+```{r}
+#' convert (unnormalized) polynomial density to gaussian approximation
+#' p the coefficients of a polynomial in increasing order p = c(p0, p1, ..., pK)
+poly_to_gaussian <- function(p){
+  p <- rev(p)
+  d <- pracma::polyder(p)
+  d2 <- pracma::polyder(d)
+  
+  #f <- function(x){polyval2(p, x)}
+  #mu <- optimize(f, interval = c(-100, 100), maximum = T)$maximum
+  roots <- Re(pracma::polyroots(d)$root)
+  mu <- roots[which.max(pracma::polyval(p, roots))]
+  
+  var <- - 1 / pracma::polyval(d2, mu)
+  return(list(mu=mu, var=var))
+}
+```
+
+To test it out:
+
+```{r}
+coef<- c(1, 2, 3)
+coef2 <- shift_polynomial(coef, -1)
+#f(x-1) = f2(x)
+(polyval2(coef, 3) == polyval2(coef2, 4))
+
+coef<- c(1, 2, 3)
+coef2 <- scale_polynomial(coef, 2)
+# f(2x) = f2(x)
+(polyval2(coef, 6) == polyval2(coef2, 3))
+```
+
+
+
+### Plot functions
+
+```{r}
+plot_effect_posterior <- function(q, b, ...){
+  mu_post <- purrr::map_dbl(q, ~purrr::pluck(.x, 'mu'))
+  var_post <- purrr::map_dbl(q, ~purrr::pluck(.x, 'var'))
+  
+  plotrix::plotCI(
+    x = b,
+    y = mu_post,
+    li =  mu_post - 2 * sqrt(var_post),
+    ui =  mu_post + 2 * sqrt(var_post),
+    ...
+  )
+  abline(0, 1, col='red')
+}
+```
+
+## Gaussian linear regression, mean field approximation
+
+Here we illustrate a simple example of our inference technique.
+We fit a mean field approximation to a bivariate regression problem
+
+$$
+\begin{aligned}
+y &\sim N(\sum_j x_j b_j, 1)\\
+b_j &\sim N(0, 1)\;\; j = 1, \dots, p
+\end{aligned}
+$$
+
+Where $x_1$ and $x_2$ are correlated (inducing dependence in the posterior $p(b_1, b_2 | \mathcal D)$.
+
+### Polynomial representation of Gaussian likelihood
+
+For the observations
+
+$$
+l(\psi) 
+= C -\frac{1}{2\sigma^2}(y - \psi)^2 
+= C -\frac{1}{2\sigma^2} y^2 + \frac{y}{\sigma^2}\psi - \frac{1}{2\sigma^2}\psi^2 \implies {\bf m} 
+= (C -\frac{y^2}{2 \sigma^2}, \frac{y}{\sigma^2}, -\frac{1}{2\sigma^2})
+$$
+For the prior
+
+$$
+\log p(b) = C -\frac{1}{2\sigma^2} \left(b - \mu \right)^2 
+\implies {\bf m} = \left(C - \frac{\mu^2}{2\sigma^2}, \frac{\mu}{\sigma^2}, -\frac{1}{2 \sigma^2}\right)
+$$
+
+### Mean field variational approximation
+
+$$
+q({\bf b}) = \prod_j q(b_j) \\
+q(b_j) = N(\mu_j, \sigma^2_j) 
+$$
+
+### Computing moment under $q$
+
+$$
+\mathbb E \psi_j = \mu_j x_j
+$$
+
+$$
+\mathbb E \psi_j^2 = (\sigma^2_j + \mu^2_j) x^2_j
+$$
+
+$$
+\bar \psi := \mathbb E_q[\psi] = \sum \mathbb E_q[\psi_j]
+$$
+
+$$
+\bar{\psi^2} = \mathbb E_q[\psi^2] =  \mathbb E_q[ \left(\sum \psi_j \right)^2] = Var(\psi) + \bar \psi
+$$
+
+
+```{r}
+#' write gaussian log density as polynomial 
+#' return a vector c representing polynomial c[3]x^2 + c[2] x + c[1]
+make_gaussian_coef <- function(y, var=1){
+  c(- 0.5 * y**2/var, y/var, -0.5 / var)
+}
+```
+
+```{r}
+#' q a p-list of distributions for effect size of each column
+#' X a n x p matrix of covariate
+#' returns a list(mu, mu2) with the means and second moments
+compute_moments <- function(X, q){
+  p <- ncol(X)
+  mu <- 0
+  var <- 0
+  for (j in 1:p){
+    mu <- mu + (X[,j] * q[[j]]$mu)
+    var <- var + (X[,j]**2 * q[[j]]$var)
+  }
+  mu2 <- var + mu**2
+  return(list(mu=mu, mu2=mu2))
+}
+
+#' compute coeeficient for EXPECTED shift
+#' f2(x) = E(f(x + c))
+shift_polynomial2 <- function(coef, mu, mu2){
+  c <- list(1, mu, mu2)
+  # construct map
+  K <- length(coef) - 1
+  M <- matrix(nrow= K+1, ncol=K+1)
+  for(j in 0:K){
+    for(k in 0:K){
+      M[j+1, k+1] <- choose(k, j) * c[[max(k-j+1, 1)]]
+    }
+  }
+  coef_new <- (M %*% coef)[, 1]
+  return(coef_new)
+}
+```
+
+```{r}
+sublist <- function(list, j){
+  list[[j]] <- NULL
+  return(list)
+}
+
+polynomial_update2 <- function(m, X, prior_p, q){
+  p <- length(q)
+  for(j in 1:p){
+    # compute moments
+    # right now we just compute two moments, but need higher moments for 
+    # higher degree polynomials
+    moments <- compute_moments(X[, -j, drop=F], sublist(q, j))
+    
+    # shift-- new polynomial in terms of \psi_j
+    m2_tilde <- do.call(rbind, lapply(1:n, function(i) shift_polynomial2(
+      m[i,], moments$mu[i], moments$mu2[i])))
+    
+    # scale-- new polynomial in terms of b_j
+    m2_hat <- do.call(rbind, lapply(1:n, function(i) scale_polynomial(m2_tilde[i,], X[i, j])))
+    
+    # compute posterior polynomial
+    m2_post <- colSums(m2_hat) + prior_p[[j]]
+    
+    # find gaussian approximation
+    q[[j]] <- poly_to_gaussian(m2_post)
+  }
+  
+  return(q)
+}
+```
+
+### Example
+
+```{r simulate}
+simulate <- function(n=500, p=2, lenghtscale = 0.8, prior_variance=5){
+  Z <- matrix(rnorm(n*p), nrow=n)
+  K <- exp(-(outer(1:p, 1:p, '-')/lenghtscale)**2)
+  X <- Z %*% K
+  
+  b <- rnorm(p) * sqrt(prior_variance)
+  y <- (X %*% b)[, 1] + rnorm(n)
+  
+  return(list(y=y, X=X, b=b))
+}
+
+sim <- simulate(p=3)
+y <- sim$y
+X <- sim$X
+b <- sim$b
+print(b)
+```
+
+```{r fit-polynomial}
+# observations in polynomial coeeficients
+m <- do.call(rbind, lapply(y, make_gaussian_coef))
+p <- ncol(X)
+
+# initialize prior and q
+q <- list()
+prior_p <- list()
+for(j in 1:p){
+  prior_p[[j]] <- c(0, 0, -0.5)
+  q[[j]] <- list(mu = 0, var=1)
+}
+
+# iteratively update
+param_history <- list()
+param_history[[1]] <- q
+for(i in 1:50){
+  q <- polynomial_update2(m, X, prior_p, q)
+  param_history[[i+1]] <- q
+}
+
+mu_post <- purrr::map_dbl(q, ~purrr::pluck(.x, 'mu'))
+var_post <- purrr::map_dbl(q, ~purrr::pluck(.x, 'var'))
+```
+
+
+Looks like we are able to recover the effects. Nice!
+
+```{r fit-polynomial}
+plot_effect_posterior(q, sim$b)
+```
+
+### Comparison to usual Bayesian computation
+
+TODO
+
+## Logistic regression
+
+Next we will take a quadratic approximation for logistic regression. 
+We will also test higher degree polynomial approximations.
+In all cases we continue to use a Gaussian mean-field variational approximation.
+Computing the moments of the higher degree polynomials may be tricky, so we defer for now.
+However, if it can be done easily we may benefit from the richer varitional approximation
+(note: the Gaussian distribution is a degree 2 polynomial exponential family since it's sufficient statistics are $T(x) = [x, x^2]$)
+
+
+
+### Polynomial approximation to log likelihood
+
+For each data point we want to approximate the log likelihood as a function of the linear predictor
+
+$$
+\log p(y | \psi) = y\psi + \log \sigma(-\psi)
+$$
+
+```{r}
+# loglike functions for y=1 and y=0
+loglik1 <- function(psi){
+  psi + log(sigmoid(-psi))
+}
+loglik0 <- function(psi){
+  log(sigmoid(-psi))
+}
+
+# polynomial approximation via pracma
+R <- 3
+ll0_p2 <- rev(pracma::polyApprox(loglik0, -R, R, n = 2)$p)
+ll0_p4 <- rev(pracma::polyApprox(loglik0, -R, R, n = 4)$p)
+ll0_p6 <- rev(pracma::polyApprox(loglik0, -R, R, n = 6)$p)
+ll0_p8 <- rev(pracma::polyApprox(loglik0, -R, R, n = 8)$p)
+
+# note: ll0 and ll1 are just reflections over the x axis
+# so we can get ll1 by taking ll0_p2 and flipping the sign of the linear term
+ll1_p2 <- rev(pracma::polyApprox(loglik1, -R, R, n = 2)$p)
+ll1_p4 <- rev(pracma::polyApprox(loglik1, -R, R, n = 4)$p)
+ll1_p6 <- rev(pracma::polyApprox(loglik1, -R, R, n = 6)$p)
+ll1_p8 <- rev(pracma::polyApprox(loglik1, -R, R, n = 8)$p)
+```
+
+
+Here we plot the $\log p(y=0 | \psi)$ and it's polynomial approximations of degree $k=2,4,6,8$.
+
+These polynomial approximations are generated using `pracma::polyApprox` which use the Chebyshev coefficients of an appropriately rescaled version of the function, to generate a polynomial approximation on the interval $[a, b]$. We generate approximations on the interval $[-R, R]$ where $R = 3$.
+
+```{r}
+S <- R + 2
+x <- seq(-S, S, by=0.1)
+plot(loglik0, -S, S)
+lines(x, polyval2(ll0_p2, x), col='red', lty='dotted')
+lines(x, polyval2(ll0_p4, x), col='blue', lty='dotted')
+lines(x, polyval2(ll0_p6, x), col='green', lty='dotted')
+lines(x, polyval2(ll0_p8, x), col='orange', lty='dotted')
+abline(v=R); abline(v=-R)
+```
+
+### Approximate date likelihood 
+
+This just takes a whoe list of vector $y$ and returns a matrix of coefficients
+
+```{r}
+#' get approximate polynomial representation of the data y
+bernoulli_poly_approx <- function(y, R, k){
+  n <- length(y)
+  p0 <- make_approximation(loglik0, R, k)
+  
+  # for y=1 flip the sign of odd coefficients (note: 0 indexing)
+  p1 <- p0
+  p1[seq(2, length(p0), by=2)] <- p1[seq(2, length(p0), by=2)] * -1
+  
+  m <- matrix(nrow = n, ncol = k + 1)
+  for(i in 1:length(y)){
+    if(y[i] == 0){
+      m[i,] <- p0
+    } else{
+      m[i,] <- p1
+    }
+  }
+  return(m)
+}
+```
+
+
+### Simulate logistic regression
+
+```{r simulate-lr}
+simulate_lr <- function(n=500, p=2, lenghtscale = 0.8, prior_variance=5){
+  Z <- matrix(rnorm(n*p), nrow=n)
+  K <- exp(-(outer(1:p, 1:p, '-')/lenghtscale)**2)
+  X <- Z %*% K
+  
+  b <- rnorm(p) * sqrt(prior_variance)
+  logits <- (X %*% b)[, 1]
+  y <- rbinom(length(logits), 1, sigmoid(logits))
+  return(list(y=y, X=X, b=b, logits=logits))
+}
+
+sim <- simulate_lr()
+y <- sim$y
+X <- sim$X
+b <- sim$b
+print(b)
+```
+
+### Approximation with $k=2$
+
+We can reuse our code above, substituting in new "data", the coefficients for the polynomial approximation to the conditional likelihood.
+
+```{r simulate}
+n <- 500
+p <- 3
+lenghtscale <- 0.8
+prior_variance <- 5
+
+Z <- matrix(rnorm(n*p), nrow=n)
+K <- exp(-(outer(1:p, 1:p, '-')/lenghtscale)**2)
+X <- Z %*% K
+
+b <- rnorm(p) * sqrt(prior_variance)
+logits <- (X %*% b)[, 1]
+y <- rbinom(length(logits), 1, sigmoid(logits))
+print(b)
+```
+
+```{r fit-logistic-k2-approximation}
+logistic_polynomial_approximation_k2 <- function(y, X, R){
+  # observations in polynomial coeeficients
+  m <- bernoulli_poly_approx(y, R, k=2)
+  p <- ncol(X)
+  
+  # initialize prior and q
+  q <- list()
+  prior_p <- list()
+  for(j in 1:p){
+    prior_p[[j]] <- c(0, 0, -0.5)
+    q[[j]] <- list(mu = 0, var=1)
+  }
+  
+  # iteratively update
+  param_history <- list()
+  param_history[[1]] <- q
+  for(i in 1:50){
+    q <- polynomial_update2(m, X, prior_p, q)
+    param_history[[i+1]] <- q
+  }
+  return(param_history)
+}
+```
+
+A 2d approximation does not seem to perform very well here.
+
+```{r check-fit-logistic-k2}
+qs <- logistic_polynomial_approximation_k2(y, X, R=5)
+q <- tail(qs, 1)[[1]]
+mu_post <- purrr::map_dbl(q, ~purrr::pluck(.x, 'mu'))
+var_post <- purrr::map_dbl(q, ~purrr::pluck(.x, 'var'))
+
+plotrix::plotCI(
+  x = b,
+  y = mu_post,
+  li =  mu_post - 2 * sqrt(var_post),
+  ui =  mu_post + 2 * sqrt(var_post)
+)
+abline(0, 1, col='red')
+```
+#### Testing a range of interval widths 
+
+We can check a few values of $R$. There is a tradeoff here of course-- the wider the interval we try to approximate, the worse  the approximation will be. But if the interval is too narrow, the polynomial approximate likelihood essentially does not support data that fall far outside the interval. This is because we require the highest odd degree coefficient of our polynomial to be $<0$ otherwise the likelihood grows unbounded outside the interval, and the approximation is not integrable.
+
+```{r, echo=FALSE}
+qs_R3 <- logistic_polynomial_approximation_k2(y, X, R=3); q_R3 <- tail(qs_R3, 1)[[1]]
+qs_R5 <- logistic_polynomial_approximation_k2(y, X, R=5); q_R5 <- tail(qs_R5, 1)[[1]]
+qs_R7 <- logistic_polynomial_approximation_k2(y, X, R=7); q_R7 <- tail(qs_R7, 1)[[1]]
+```
+
+```{r}
+par(mfrow = c(1, 3))
+plot_effect_posterior(q_R3, b, main='R=3')
+plot_effect_posterior(q_R5, b, main='R=5')
+plot_effect_posterior(q_R7, b, main='R=7')
+```
+
+### Higher degree approximations
+
+Now we will extend our implementation above to handle higher degree approximations.
+This involves computing higher moments of the effect predictions, which isn't too hard for Gaussian distributions.
+
+```{r}
+#' Make shift matrix
+#' 
+#' Generate matrix that maps coefficients of a polynomial
+#' f(x + y) (represented by coefficients p) to coefficients of
+#' f2(x) = E_{p(y)}[f(x+y)]
+#' @param moments moments of y
+make_shift_matrix <- function(moments){
+  # construct map
+  K <- length(moments) - 1
+  M <- matrix(nrow= K+1, ncol=K+1)
+  for(j in 0:K){
+    for(k in 0:K){
+      M[j+1, k+1] <- choose(k, j) * moments[[max(k-j+1, 1)]]
+    }
+  }
+  return(M)
+}
+
+#' Transform coefficients of a polynomial f(x + y) (represented by coefficients p)
+#' to coefficients of f2(x) = E_{p(y)}[f(x+y)]
+#' @param p K+1 coefficients of a degree-k polynomial
+#' @param moments moments of y (including E[y^0] = 1)
+shift_polynomial3 <- function(p, moments){
+  M <- make_shift_matrix(moments)
+  p_new <- (M %*% p)[, 1]
+  return(p_new)
+}
+
+compute_normal_moments <- function(mu, var, k){
+  return(purrr::map_dbl(0:k, ~actuar::mnorm(.x, mu, sqrt(var))))
+}
+
+#' compute k moments for psi = xb, b ~ N(mu, var)
+compute_psi_moments <- function(x, mu, var, k){
+  normal_moments <- compute_normal_moments(mu, var, k)
+  psi_moments <- do.call(cbind, purrr::map(0:k, ~ (x**.x) * normal_moments[.x + 1]))
+}
+
+#' update q with polynomial approximation of arbitrary degree
+polynomial_update3 <- function(m, X, prior_p, q){
+  K <- ncol(m) - 1
+  p <- ncol(X)
+  n <- nrow(X)
+  for(j in 1:p){
+    m_tilde <- m
+    for(k in (1:p)[-j]){
+      moments <- compute_psi_moments(X[, k], q[[k]]$mu, q[[k]]$var, K)
+      m_tilde <- do.call(rbind, lapply(1:n, function(i) shift_polynomial3(
+        m_tilde[i,], moments[i,])))
+    }
+    
+    # scale-- new polynomial in terms of b_j
+    m_hat <- do.call(rbind, lapply(1:n, function(i) scale_polynomial(
+      m_tilde[i,], X[i, j])))
+    
+    # compute posterior polynomial
+    m_post <- colSums(m_hat) + prior_p[[j]]
+    
+    # find gaussian approximation
+    q[[j]] <- poly_to_gaussian(m_post)
+    q[[j]]$m_post <- m_post
+  }
+  
+  return(q)
+}
+
+logistic_polynomial_approximation <- function(y, X, R, K=2){
+  # observations in polynomial coeeficients
+  m <- bernoulli_poly_approx(y, R, K)
+  q <- list()
+  prior_p <- list()
+  for(j in 1:p){
+    prior_p[[j]] <- c(c(0, 0, -0.5), rep(0, K-2)) # extend polynomial to agree with m
+    q[[j]] <- list(mu = 0, var=1) # initialize normal posterior
+  }
+  
+  # iteratively update
+  param_history <- list()
+  param_history[[1]] <- q
+  for(i in 1:50){
+    q <- polynomial_update3(m, X, prior_p, q)
+    param_history[[i+1]] <- q
+  }
+  return(param_history)
+}
+```
+
+### Compare implimentations
+
+```{r}
+sim <- simulate_lr(p=3)
+y <- sim$y
+X <- sim$X
+b <- sim$b
+
+qs_2 <- logistic_polynomial_approximation_k2(y, X, R=10)
+qs_k2 <- logistic_polynomial_approximation(y, X, R=10, K=2)
+```
+
+The two implimentations agree!
+
+```{r}
+par(mfrow=c(1,2))
+plot_effect_posterior(qs_2[[51]], b, main='A')
+plot_effect_posterior(qs_k2[[51]], b, main='B')
+```
+
+#### Vary degree of approximation
+
+We approximate the likelihood on $[-10, 10]$ with $K=2,6,10,14$. Note the polynomial approximation cannot be e.g. degree $4$ because these polynomials are unbounded above ($c_4 >0$), so $e^ \hat f(x)$ is not integrable over the real line. But $c_K < 0$ for approximations of degree $K = 2z + 2$ for $z \in \mathbb N$.
+
+```{r}
+qs_k2 <- logistic_polynomial_approximation(y, X, R=10, K=2)
+qs_k6 <- logistic_polynomial_approximation(y, X, R=10, K=6)
+qs_k10 <- logistic_polynomial_approximation(y, X, R=10, K=10)
+qs_k14 <- logistic_polynomial_approximation(y, X, R=10, K=14)
+
+purrr::map_dbl(qs_k2[[51]], ~purrr::pluck(.x, 'mu'))
+purrr::map_dbl(qs_k6[[51]], ~purrr::pluck(.x, 'mu'))
+purrr::map_dbl(qs_k10[[51]], ~purrr::pluck(.x, 'mu'))
+purrr::map_dbl(qs_k14[[51]], ~purrr::pluck(.x, 'mu'))
+```
+
+
+```{r}
+par(mfrow=c(2,2))
+plot_effect_posterior(qs_k2[[51]], b, main='K=2')
+plot_effect_posterior(qs_k6[[51]], b, main='K=6')
+plot_effect_posterior(qs_k10[[51]], b, main='K=10')
+plot_effect_posterior(qs_k14[[51]], b, main='K=14')
+```
+
+### Higher degree polynomial posterior $q$
+
+In the above implementation we compute a polynomial proportional to the posterior density, but reduce this to a Gaussian approximation by taking a Laplace approximation.
+
+That is we want to compute
+ 
+$$
+\mathbb E [b^j] = \int_{\mathbb R} b^j q(b)
+$$
+
+Which we approximate by
+
+$$
+\mathbb E [b^j] \approx \int_{\mathbb R} b^j q_{\text{gauss}}(b)
+$$
+
+Where $q_{\text{gauss}}$ is the Gaussian distribution that minimizes the divergence to $q_{\text{gauss}} = \arg \min_{q_g} KL(q_g ||q)$.
+
+
+It would be better if we could compute the moments of $q(b_l) \propto \exp\{\sum_k \eta_k b_l^k\}$. We define the log normalizing constant $A({\bf \eta}) = \log \int \exp\{\sum_{k=0}^K \eta_k b_l^k\} db$. Let $f(b) = \sum_{k=0}^K \eta_k b^k - A(\eta)$ so that $q(b) = \exp\{f(b)}$. 
+
+Because $q$ is in an exponential family, we know that $\nabla_{\eta} A(\eta) = \mathbb E[T(x)] = [1, \mathbb E[b], \mathbb E[b^2], \dots, \mathbb E[b^K]]$. Is there an easy way to compute the gradient of $A$?
+
+#### Quick note on Laplace approximation
+
+Then we can compute the first and second derivatives
+$f'(b) = \sum_{k=1}^K \eta_k kb^{k-1}$ and 
+$f''(b) = \sum_{k=2}^K \eta_k k(k-1)b^{k-2}$
+
+Next, we can form a quadratic approximation to $f$ around its maximum, $x_0$ (so that $f'_0 = 0$)
+
+$$
+\begin{aligned}
+\hat f(x) 
+&= f_0  + \frac{1}{2}f''_0(x-x_0)^2 \\
+&= \frac{1}{2}f''_0 x^2 + (- f''_0x_0) x + (\frac{1}{2}f''_0x_0^2 + f_0)
+\end{aligned}
+$$
+
+Identifying $a = \frac{1}{2}|f''_0|$, $b = - f''_0x_0$ and $c = \frac{1}{2}f''_0x_0^2 + f_0$ we can evaluate the integral
+
+$$
+\int e^{-ax^2 + bx + c} dx = \sqrt{\frac{\pi}{a}} e^{\frac{b^2}{4a} + c}.
+$$
+
+
+```{r}
+m_post <- qs_k10[[51]][[1]]$m_post
+
+points <- seq(-3, 3, by=0.1)
+plot(points, polyval2(m_post, points), type = 'line')
+
+exp_p_laplace <- function(p, k=0){
+  f <- function(x){polyval2(m_post, x)}
+  x0 <- optimize(f, interval = c(-R, R), maximum = T)$maximum
+  
+  d <- rev(pracma::polyder(rev(m_post)))
+  d2 <- rev(pracma::polyder(rev(d)))
+  
+  f_x0 <- f(x0)
+  d2_x0 <- polyval2(d2, x0)
+  
+  # coefficients
+  a <- 0.5 * abs(d2_x0)
+  b <- - d2_x0 * x0
+  c <- 0.5 * d2_x0 * x0**2
+  
+  # gaussian integral
+  exp(b^2/(4*a) + c + 0.5 * log(pi / a))
+}
+```
+
+
+## Poisson regression example
+
+### Impliment
+
+```{r}
+poisson_ll <- function(y){
+  f <- function(psi) dpois(y, exp(psi), log = T)
+  return(f)
+}
+
+poisson_approx <- function(y, R, k, as_function=F){
+  f <- poisson_ll(y)
+  p <- make_approximation(f, R, k, plot = F)
+
+  if(as_function){
+    p2 <- function(x) polyval2(p, x)
+    return(p2)
+  }
+  return(p)
+}
+
+poisson_poly_approx <- function(y, R, k){
+  unique_counts <- unique(y)
+  
+  polynomials <- list()
+  for(yy in unique_counts){
+    polynomials[[yy + 1]] <- poisson_approx(yy, R, k)
+  }
+  
+  m <- do.call(rbind, purrr::map(y, ~polynomials[[.x + 1]]))
+  return(m)
+}
+
+poisson_regression_polynomial_approximation <- function(y, X, R, K=2){
+  # observations in polynomial coeeficients
+  tic()
+  m <- poisson_poly_approx(y, R, K)
+  p <- ncol(X)
+  q <- list()
+  prior_p <- list()
+  for(j in 1:p){
+    prior_p[[j]] <- c(c(0, 0, -0.5), rep(0, K-2)) # extend polynomial to agree with m
+    q[[j]] <- list(mu = 0, var=1) # initialize normal posterior
+  }
+  
+  # iteratively update
+  param_history <- list()
+  param_history[[1]] <- q
+  for(i in 1:50){
+    q <- polynomial_update3(m, X, prior_p, q)
+    param_history[[i+1]] <- q
+  }
+  toc()
+  return(param_history)
+}
+```
+
+### Visualize approximation
+
+```{r}
+f <- poisson_ll(3)
+p <- make_approximation(f, 10, 12, plot=T)
+
+p <- poisson_approx(3, 5, 12, T)
+```
+
+### Simulate poisson regression
+
+```{r simulate-lr}
+simulate_poisson_regression <- function(n=500, p=2, lenghtscale = 0.8, prior_variance=1){
+  Z <- matrix(rnorm(n*p), nrow=n)
+  K <- exp(-(outer(1:p, 1:p, '-')/lenghtscale)**2)
+  X <- Z %*% K
+  
+  b <- rnorm(p) * sqrt(prior_variance)
+  logrates <- (X %*% b)[, 1]
+  y <- rpois(length(logrates), exp(logrates))
+  return(list(y=y, X=X, b=b, logrates=logrates))
+}
+
+sim <- simulate_poisson_regression(p=4, prior_variance = 1)
+y <- sim$y
+X <- sim$X
+b <- sim$b
+print(b)
+```
+
+### Example
+
+```{r}
+pois_R5_K2 <- poisson_regression_polynomial_approximation(y, X, R=5, K=2)
+pois_R5_K4 <- poisson_regression_polynomial_approximation(y, X, R=5, K=4)
+pois_R5_K8 <- poisson_regression_polynomial_approximation(y, X, R=5, K=8)
+pois_R5_K16 <- poisson_regression_polynomial_approximation(y, X, R=5, K=16)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot_effect_posterior(pois_R5_K2[[51]], b, main='K=2')
+plot_effect_posterior(pois_R5_K4[[51]], b, main='K=4')
+plot_effect_posterior(pois_R5_K8[[51]], b, main='K=8')
+plot_effect_posterior(pois_R5_K16[[51]], b, main='K=16')
+```
+
+
+```{r}
+plot_effect_posterior(pois_R5_K2[[51]], sim$b)
+purrr::map_dbl(pois_R5_K2[[51]], ~purrr::pluck(.x, 'mu'))
+```
+
+
+

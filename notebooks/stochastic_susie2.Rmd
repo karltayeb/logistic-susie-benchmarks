@@ -1,0 +1,35 @@
+---
+title: "Stochastic SuSiE for general likelihoods 2"
+author: "Karl Tayeb"
+date: "2022-02-19"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+    includes:
+      in_header: "preamble.tex"
+  html_document:
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+## Sample many times, fit one regression
+
+Before we described an approach where we fit many SERs, then use a first order approximation to justify averaging the natural parameters. Here we describe an approach for optimizing $\Lsusiemcm$ more directly using a single SER.
+
+
+Recall,
+
+$$
+\Lsusiemcm (q_l) 
+= \E{q_l}{
+  \frac{1}{M} \sum \log p (y | \bl, \gl, \bml^{(m)}, \gml^{(m)}) + \log p(\bl, \gl)
+} + H(q_l)
+$$
+
+This can be thought of us a weighted regression problem with an augmented data set-- there are now $M$ copies of the data, each with their own predicted offset determined by the sample $\bml^{(m)}, \gml^{(m)}$. But each observation is given a weight $1/M$. 
+
+## Online learning
+
+We can imagine adaptively choosing $M$ for each of the variables separately. After each sample we can update our regression. With this approach we can quickly drop the features that are unlikely to contribute substantially to the SER. We can focus more computational effort on estimating the posterior for features with stronger association. Our approximation will be acurate where it counts, without wasting computation where it contributes very little to inference (e.g. a feature that will have $q(\gamma_l = j) \approx 0)$)

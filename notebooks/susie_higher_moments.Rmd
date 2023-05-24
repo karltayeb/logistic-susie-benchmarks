@@ -1,0 +1,158 @@
+---
+title: "Higher moments of susie predictions"
+author: "Karl Tayeb"
+date: "2022-02-19"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+    includes:
+      in_header: "preamble.tex"
+  html_document:
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+
+## Moment generating functions
+
+$$
+M_X(t) = \E{}{\Exp{Xt}}
+$$
+
+### MGF for Sum of independent random variables
+
+For $Y = X_1 + \dots + X_n$, where $X_1, \dots, X_n$ are independent. The moment generating function for $X$ is the product of MGFs for the $X_i$.
+
+$$
+M_Y(t) = \prod M_{X_i}(t)
+$$
+
+Then derivates of the MGF for $Y$ are given by "leave-one-out" sum
+
+$$
+\frac{d}{dt} M_Y(t) = \sum_i M_{Y - X_i}(t) \frac{d}{dt}M_{X_i}(t)
+$$
+
+
+$$
+\frac{d^m}{dt^m} M_Y(t) = 
+\sum_i \sum_{j=0}^{m-1} {m-1 \choose j} \frac{d^{j}}{dt^{j}} M_{Y-X_i}(t)  \frac{d^{m-j}}{dt^{m-j}} M_{X_{i}}(t) 
+$$
+
+So that 
+
+$$
+\E{}{Y^m} = \frac{d^m}{dt^m} M_X(0) = \sum_i \sum_{j=0}^{m-1} {m-1 \choose j}\E{}{\left(Y - X_{i}\right)^j} \E{}{X_{i}^{m-j}}
+$$
+Now, this is a pretty complicated sum!
+
+We can also write 
+
+$$
+\E{}{(X_i + \left(Y - X_{i}\right))^m} 
+= \E{}{\sum_{j=1}^m{m \choose j} X_i^jX_{-i}^{m-j}} =\sum_{j=1}^m {m \choose j}\E{}{ X_i^j}\E{}{\left(Y - X_{i}\right)^{m-j}}
+$$
+
+Which looks a bit simpler, but again the "leave-one-out" moment will need to be computed recursively.
+
+
+$$
+\E{}{(\sum_i X_i)^m} 
+= \E{}{\sum_{j_1, \dots, j_n}{m \choose j_1, \dots, j_n} \prod_{i=1}^{n} X_i^{j_i}} 
+= \sum_{j_1, \dots, j_n}{m \choose j_1, \dots, j_n} \prod_{i=1}^n \E{}{X_i^{j_i}}
+$$
+Which we can compute by (1) computing $m \times n$ moments for each $X_i^j$. (2) computing the multinomial sum over $n + m -1 \choose m-1$ terms. That sum is quite large! And we might hope there is a way to simplify.
+
+
+### Simplification for mean 0, symmetric random variables
+
+If $X_i$ are mean 0 and symmetric, then $\E{}{X^{2k+1}} = 0 \forall k \geq 0$. Which can rather simplify the computation of the higher moments since may terms in the sum are 0.
+
+
+### "Rank one" updates
+
+Suppose we've compute $\E{}{Y^k}, k = 1 \dots m$, but now we would like to (1) remove $X_i$ and (2) add $\tilde X_i$ to $Y$.
+That is $\E{}{\tilde Y^k}$ where $\tilde Y = (Y - X_i + \tilde X_i)$.
+
+Define $Y^{-} = Y - X$ and $Y^{+} = Y - X$
+
+It's straightforward to add to $Y$
+
+$$
+\left(Y^{+}\right)^k = (Y + X)^k = \sum {k \choose i} X^iY^{k-i}
+$$
+
+Due to indpendence we can update the moments of $Y$ easily
+
+$$
+\E{}{\left(Y^{+}\right)^k} = \sum {k \choose i} \E{}{X}^i\E{}{Y^{k-i}}
+$$
+
+We need to be careful when we remove from $Y$
+
+$$
+\left(Y^{-}\right)^k = \left(Y - X\right)^k = \sum {k \choose i} (-1)^iX^iY^{k-i}
+$$
+
+Evaluating these expectations involve computing
+
+$$
+\E{}{X^iY^{k-i}}
+$$
+### MGF for Mixture distributions
+
+Suppose $Z \sim \sum \pi_k X_k$ then
+
+$$
+M_Z(t) = \sum \pi_k M_{X_k}(t)
+$$
+
+### SuSiE MGF
+
+The linear predictions for the $l$-th single effect are a normal mixture
+
+$$
+\psi_l = x^T \beta_l \sim \sum \pi_{li}N(x_i\mu_{b,il}, x_i^2 \sigma_{b,il}^2) = \pi_{li}N(\mu_{li}, \nu_{li}).
+$$
+
+The linear prediction $\psi = \sum_l \psi_l$ is then also a normal mixture, now with $L^p$ mixture components
+
+$$
+\psi \sim \sum_{i_1, \dots, i_L} \pi_{l,i_l} N(\sum_l \mu_{li_l}, \sum_l \nu_{li_l}).
+$$
+
+So the question is this: can we compute (or accurately approximate) the higher moment of a normal mixture?
+Can this computation be simplified by this "sum of mixture" structure?
+
+### Normal moments
+
+For $X \sim N(\mu, \nu)$,
+
+$$
+M_X(t) = \Exp{\mu t + \frac{1}{2}\nu t^2}
+$$
+
+$$
+M_X^{(k)}(t) = M^{(k-1)}(t)(\mu + \nu t) + (k-1) M^{(k-2)}(t) \nu
+$$
+So the moments of a normal distribution can be computed by a simple recursion. For $k \geq 2$
+
+$$
+\E{}{X^m} = \E{}{X^{m-1}} \mu + (m-1) \E{}{X^{m-2}} \nu
+$$
+
+### Normal mixture mixture
+
+Naively, the higher moments of a mixture distribution are just an average over the moments of each component
+
+$$
+\E{}{Z^m} = \sum \pi_k \E{}{X_k^m}
+$$
+
+$$
+\E{}{Z^m} = \sum_{j_1, \dots j_L} \pi_{1j_1} \dots \pi_{Lj_L} \E{}{X_k^m}
+$$
+
+

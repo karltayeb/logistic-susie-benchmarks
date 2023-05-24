@@ -1,0 +1,318 @@
+---
+title: "Stochastic SuSiE Notes"
+author: "Karl Tayeb"
+date: "2022-02-07"
+output:
+  pdf_document:
+    includes:
+      in_header: "preamble.tex"
+  html_document:
+    includes:
+      in_header: "preamble.tex"
+---
+
+```{r, include=FALSE}
+options(tinytex.verbose = TRUE)
+```
+
+The evidence lower bound (ELBO) for SuSiE is given by:
+
+
+\begin{align}
+  \Lsusie(q) &= \E{q}{\log p(y, b, \gamma)} - \E{q}{q},
+\end{align}
+
+
+We can perform approximate inference by maximizing $\Lsusie$ with respect to $q$
+in the restricted family of distributions: 
+
+$$
+q^* = \arg\max_{q \in \mathcal Q}{{\Lsusie(q)}}.
+$$
+
+We will restrict our attention to the family that factorizes over the single effects $\mathcal Q = \{q: q = \prod q_l\}$.
+We use $q_l$ as a shorthand for $q(b_l, \gamma_l)$. We will also adopt the notation $q_{-l}$, $\bml$, $\gml$, etc.
+to denote the distributions, effects, and variables selected for all but the $l$-th single effect.
+
+First, let's consider our objective as a function of $q_l$ only
+
+
+\begin{align}
+  \Lsusie(q_l; q_{-l}) 
+  &= \E{q_{-l}}{
+    \E{q_l}{\log p(y, b, \gamma)}
+  } - \E{q_l}{q_l} + C
+\end{align}
+
+
+Where $C$ is a constant with respect to $q_l$. 
+In general, the expectation over $q(\gml)$ involves summing over $p^L$ configurations of non-zero effect variables,
+so we cannot directly compute the ELBO.
+However, we can obtain a Monte-Carlo estimate of the objective by sampling the outer expectation. Let
+$\bml^*, \gml^*$ denote a sample from $q_{-l}$, then 
+
+
+\begin{align}
+\Lsusiemc(q_l) 
+&= \E{q_l}{\log p(y, \bl, \gl, \bml^*, \gml^*)} - \E{q_l}{q_l} + C, \\
+&= \Lser(q_l; \psi_{-l}^*) + C,
+\end{align}
+
+
+Where $\psi_{-l} = X(\sum_{k \neq l} b_k \gamma_k)$ are the sampled predictions 
+from the $L-1$ other single effects and $\Lser(q_l, \psi_{-l}^*)$ is the ELBO 
+for an SER, where $\psi_{-l}^*$ is a fixed offset in the linear prediction.
+
+By optimizing $\Lser(q_l, \psi_{-l}^*)$, with respect to $q_l$, we are also
+optimizing an unbiased estimate of the SuSiE ELBO.
+We can use this fact to develop a stochastic approximation approach,
+where we approximate $q_l$ by solving multiple instances of an easier SER problem.
+
+
+## Connection with gradient descent
+
+In the Gaussian model, the SER prior is conjugate. $q(b | \gamma)$ is Gaussian and $q(\gamma)$ is multinomial.
+The coordinate updates can be related to a step of gradient descent in the natural parameter space.
+
+
+Generically, Let the complete conditional $p(b | y, z)$ be an exponential family with natural parameter $\lambda(y, z)$ and $q(b)$ the same family with natural parameter $\eta$. Our goal is to optimize $q(b)$, we assume $q(b, z) = q(b)q(z)$.
+
+\begin{align}
+\mathcal L (\eta) 
+&= \E{q(b)}{\E{q(z)}{\log p(b | y, z)}} - \E{q(b)}{\log q(b)} + C \\
+&= \E{q(b)}{\E{q(z)}{\langle T(b), \lambda(y, z) \rangle}} - \E{q(b)}{\langle T(z), \lambda \rangle - A(\lambda)} + C \\
+&= \E{q(b)}{\E{q(z)}{\langle T(b), \lambda(y, z) - \eta \rangle}} - A(\eta) + C \\
+&=\langle \E{q(b)}{T(b)}, \E{q(z)}{\lambda} - \eta \rangle - A(\eta)  + C\\
+&=\langle \nabla_\eta A(\eta), \E{q(z)}{\lambda} - \eta \rangle - A(\eta) + C
+\end{align}
+
+Taking the gradient w.r.t $\eta$
+
+$$
+\nabla_\eta \mathcal L(\eta) = \nabla^2_\eta A(\eta)( \E{q(z)}{\lambda} - \eta)
+$$
+Which is optimized at $\eta = \E{q(z)}{\lambda}$. This says that the coordinate update for $\eta$ is the expected natural parameter of the complete conditional.
+
+We can also see that
+
+$$
+\E{q(z)}{\lambda} - \eta = (\nabla^2_\eta A(\eta))^{-1} \nabla_\eta \mathcal L(\eta)
+$$
+
+The LHS can be computed by taking the coordinate update and subtracting the current parameter estimate.
+The RHS is a rescaled gradient.
+
+The idea is that an unbiased estimate of $\E{q(z)}{\lambda}$ (e.g. obtained from coordinate update of an unbiased estimate of the ELBO), gives a noisy version of the rescaled gradient on the RHS, which can be used in stochastic gradient descent. Call the coordinate update for $\hat {\mathcal L}$ $\hat \eta$,
+
+\begin{align}
+\eta^{(t + 1)} 
+&= \eta ^{(t)} + \alpha_t  (\nabla^2_\eta A(\eta))^{-1} \nabla_\eta \hat{\mathcal{L}} (\eta) \\
+&= \eta ^{(t)} + \alpha_t(\hat \eta - \eta^{(t)}) \\
+&= (1 - \alpha_t) \eta^{(t)} + \alpha_t \hat\eta
+\end{align}
+
+
+We note that $q(\gamma)$ is multinomial (an exponential family, same as the prior) so this stochastic optimization approach should work for $q(\gamma)$. The troulbe we have is that for general likelihoods $p(b | \gamma, y, X)$ is not Gaussian. We could consider making a Gaussian approximation by constraining $q(b | \gamma)$ to be Gaussian. However, while ate each step $\hat q(b | \gamma)$ will be the best Gaussian approximation for that iteration-- it is not clear that the sequence of $q^{(t)}(b | \gamma)$ would converge to the best Gaussian approximation of the SER posterior. However, if we can access samples from $p(\bml | \gml, y, X)$ we can be sure that $q^{(t)}(\gamma)$ will converge to what we want.
+
+We can consider strategies that help us estimate
+
+$$
+\E{q_{-l}}{\lambda(\bl, \gl, \bml, \gml)}
+$$
+
+## Variance Reduction
+
+### Taking expectation over $q(\bml | \gml)$
+
+Where possible, we can reduce variability by taking expectations over
+$q(\bml | \gml)$ analytically, rather than sampling.
+
+\begin{align}
+\Lsusiemcb(q_l)
+&= \E{q(\bml | \gml)}{\E{q_l}{\log p(y, \bl, \bml, \gl, \gml^*)}}- \E{q_l}{q_l} + C, \\
+&= \E{q(\bml | \gml)}{\Lser(q_l; \psi_{-l})} + C,
+\end{align}
+
+
+Again, we have $\E{}{\Lsusiemcb} = \Lsusie$.
+Optimizing $\Lsusiemcb(q_l)$ amounts to being fitting an SER with
+independent normal "random effect" for each observation
+$(\psi_{-l})_i \sim N(\sum_{k\neq l} x_{i\gamma_k}\mu_{k\gamma_k}, \sum_{k\neq l} x_{i\gamma_k}^2 \nu_{k\gamma_k})$.
+This can be done efficiently e.g. when $\log p (y, \psi)$ is quadratic in $\psi$,
+such as when using the Jaakola-Jordan/Polya-Gamma approximation.
+Note that while the predictions are certainly not independent across samples,
+the log-likelihood seperates across samples,
+so only the marginal distribution of $\psi_{-l,i}$ matters here.
+
+
+### Multiple samples
+
+Another easy and more general way to reduce variance is simply to draw more samples.
+We will consider how to optimize the MC estimate of the $\Lsusie$ obtained by averaging multiple
+draws of $\Lsusiemc$ or $\Lsusiemcb$. 
+
+$$
+\Lsusiemcm = \frac{1}{M} \sum_m \Lsusiemc(q_l)^{(m)} \\
+\Lsusiemcbm = \frac{1}{M} \sum_m \Lsusiemcb(q_l)^{(m)}
+$$
+
+In practice this may be an attractive option if we can get a good approximation
+of the posterior for moderate $M$. In this case we can closely approximate the
+(non-stochastic) coordinate wise optimization of the ELBO by fitting the
+stochastic SER to convergence.
+
+This seems  particularly plausible for $\Lsusiemcbm$, where as we approach the optimum 
+solution there might not be too much variability across samples. We expect this
+because the $L-1$ other single effects should either be concentrated on a few 
+highly correlated variables (giving similar predictions), or not contribute much prediction at all.
+As a plus, if we can estimate the prior variance for these diffuse components, we will 
+estimate a small prior variance ("automatic relevance determination", "ARD"), 
+which will induce strong shrinkage and further reduce variability in the 
+predictions.
+
+For each sample we can fit an SER to approximate the posterior of $q_l$ for SuSiE.
+A key question is if we can effectively combine the posterior estimates for multiple SERs.
+
+Typically, stochastic approximation is performed sequentially. At a high level,
+a stochastic estimate of the loss function or gradient is taken, and used to update $q$.
+This step usually depends on the current state of $q$, and so must be performed sequentially.
+Over a large number of iterations, we can expect our parameter estimates to drift towards there true value and bounce around there.
+Stochastic optimization runs the procedure for a long time, slowly ignoring the new gradient information. If this "ignoring" happens at a slow enough rate, famous results due to Robbins and Monroe guarantee the convergence (in probability?) of our parameter estimates to their true optimum.
+
+In our case, the stochasticity we are using does not depend at all on $q_l$.
+Intuitively, we should hope the way we combine the SER posteriors to treat each posterior symmetrically,
+or at least in a way that does not depend on the ordering of the posterior SERs.
+Below we provide a sketch of an argument for why averaging the natural parameters is reasonable.
+Importantly, it seems to work in practice.
+
+## Combining SER posteriors
+
+Suppose $\eta^{(m)}$ optimizes $\Lserm{m}$ (i.e. $\nabla_\eta \Lserm{m}(\eta^{(m)}) = 0$).
+Then, we can approximated the gradient of $\Lsusiemcbm$ by taking a 1st order 
+Taylor series expansion around $\eta^{(m)}$ for each $\nabla_\eta \Lserm{m}$
+
+
+\begin{align}
+\nabla_\eta \Lsusiemcbm(\eta) 
+&= \frac{1}{M} \sum_m \nabla_\eta\Lsusiemcb^{(m)}(\eta) \\
+&= \frac{1}{M} \sum_m \nabla_\eta\Lserm{m}(\eta) \\
+&\approx \frac{1}{M} \sum_m \nabla_\eta\Lserm{m}(\eta^{(m)}) + \nabla^2_\eta\Lserm{m}(\eta^{(m)})(\eta - \eta^{(m)}) \\
+&= \frac{1}{M} \sum_m \nabla^2_\eta\Lserm{m}(\eta^{(m)}) (\eta - \eta^{(m)})
+\end{align}
+
+Where we take note that $\nabla_\eta\Lserm{m}(\eta^{(m)}) = 0$. 
+In the case where we have a Gaussian likelihood, the SER prior is conjugate,
+and $\nabla_\eta \Lser(\eta^{(m)}) = - \nabla ^2_\eta A(\eta^{(m)})$.
+
+\begin{align}\label{eq:1}
+\frac{1}{M} \sum_m \nabla^2_\eta\Lserm{m}(\eta^{(m)}) (\eta - \eta^{(m)}) = 0 \implies \eta = \left(\sum \nabla^2_\eta\Lserm{m}(\eta^{(m)})\right)^{-1}\left(\nabla^2_\eta\Lserm{m}(\eta^{(m)}) \eta^{(m)}\right)
+\end{align}
+
+However, $q(b |  \gamma)$ is univariate Normal, the Fisher information matrix is diagonal, and only depends on the posterior variance. Assuming a normalized $X$ and a fixed residual variance, this corresponds with a straight average of the natural parameters across $M$ SERs.
+
+For $q(\gamma)$, we note that the natural parameters $\{\eta_i:\;i \in [p-1]\}$ are the log Bayes factors comparing selecting variable $i$ over selecting variable $p$. This can be written in terms of the log Bayes factors against the null
+
+$$
+\eta_i = \text{lbf}_i - \text{lbf}_p
+$$
+
+Then 
+
+$$
+\bar \eta_i = \overline {\text{lbf}}_i - \overline {\text{lbf}}_p
+$$
+
+where $\overline {\text{lbf}}_i = \frac{1}{M} \sum \text{lbf}_i^{(m)}$. Recognizing that $\text{lbf}_i^{\,(m)}$ is an unbiased estimate of $\text{lbf}_i$ in the full SuSiE model, it also seems reasonable to to take the average here. This is different from the \ref{eq:1}. In preliminary results, averaging seems to work better, the information matrix can be poorly conditioned, and seems to perform worse empirically. 
+
+You might also think it's reasonable to say $\nabla^2\Lser^{(m)} \approx K$ for all $m$.
+The curvature of the objective function at it's optimum is dictated mostly by the information in the data.
+The information content in each MC sample differs slightly due to sampling $q_{-l}$, but should be simlar/the same in some averaged sense.
+For a constant $K$, it follows that $\bar \eta = \frac{1}{M} \sum_m \eta^{(m)}$ is close the the optimum of $\Lsusiemcbm$.
+ 
+
+### Justification for averaging the natural paremeters
+
+We can approximate the posterior inference, $q(\bl, \gl) \propto \Exp{\log p (y | \bl, \gl)} p(\bl, \gl)$
+by plugging in our MC estimate for $\log p(y | \bl, \gl)$
+
+
+\begin{align}
+\hat q(\bl, \gl) &\propto
+\exp \left\{
+\frac{1}{M} \sum_m \log p(y | \bl, \gl, \bml^{(m)}, \gml^{(m)})
+\right \}p_l(\bl, \gl) \\
+%
+&=
+\prod_m \left\{
+p(y | \bl, \gl, \bml^{(m)}, \gml^{(m)}) p_l(\bl, \gl) \right\}^{\frac{1}{M}} \\
+\end{align}
+
+For exponential families, conjugacy reduces posterior computation to a sum,
+
+$$
+p(y | z) p(z) 
+\propto \exp \left[ \langle T(z), \eta(y) \rangle \right] \exp \left[ \langle T(z), \eta_0 \rangle \right]
+= \exp \left[ \langle T(z), \eta(y) + \eta_0 \rangle \right] 
+$$
+
+
+In the conjugate case, where $\eta ^{(m)}$ is the natural parameter for $q_l^{(m)} \propto p(y, \bl, \gl, \bml^{(m)}, \gml^{(m)})$, then $\bar\eta = \frac{1}{M} \sum \eta^{(m)}$ is the natural parameter for $\hat q_l$. To see this note that we can write $\eta^{(m)} = \tilde \eta^{(m)} + \eta_0$. Then we can see that the natural parameter for $\hat q_l$ can be written, 
+
+$$
+\eta_0 + \frac{1}{M} \sum \tilde \eta^{(m)} = \frac{1}{M} \sum \eta^{(m)}  = \bar \eta
+$$
+
+So actually, averaging the natural parameters can be justified for large $M$. We can think of this as normal Bayesian inference incorporating a collection of "partial observations", one from each MC sample with "weight" $1/M$.
+
+In the non-conjugate case, we form an approximation for each MC sample, $q_l^{(m)} \approx \hat q_l^{(m)}$ with natural parameter $\eta^{(m)}$. Then, we think, that $\bar \eta$ is close to the natural parameter for $\hat q_l$. But now we also need to find a way to argue that the average of the natural parameters of these "projected posteriors" (projected to the prior family) is close to the "projected posterior" formed by projecting the "exact" posterior across all $M$ samples.
+
+Obviously, while $\E{}{\frac{1}{M} \sum_m \log p(y | \bl, \gl, \bml^{(m)}, \gml^{(m)})} = \log p(y | \bl, \gl)$, 
+
+$$
+\E{}{
+\Exp{\frac{1}{M} \sum_m \log p(y | \bl, \gl, \bml^{(m)}, \gml^{(m)})}
+} \neq p(y | \bl, \gl), 
+$$
+
+But the bias term shrinks as $M \rightarrow \infty$, and variability in the average disappears.
+So, I want to say $\hat q_l \rightarrow q_l$ in some sense.
+
+
+*Conjugacy*: There is only one family of distributions on Categorical data (the Categorical distribution).
+$q(\gamma_l)$ is Categorical, so is $p(\gamma_l)$.
+
+We may constrain $q(b | \gamma)$ to be Normal, in which case we need to account for the approximation error (more analysis needed).
+Otherwise we can find some other means to sample from $q(b | \gamma)$.
+Can we approximate with the mixture $q(b | \gamma) \sim \sum \frac{1}{M}q^{(m)}(b | \gamma)$? We can make a normal approximation for each $q^{(m)}$
+
+### Stochastic SuSiE is highly paralellizable
+
+Compared to regularly SuSiE, stochastic SuSiE will require many more calls to the SER routine.
+However, computing the posterior in an SER is embarassingly parallelizable-- 
+as it basically involve fitting $p$ independent regression problems to estimate $q(b | \gamma)$,
+and normalizing the Bayes factors to compute $q(\gamma)$. Furthermore, we can fit SERs for all $M$ samples in parallel.
+
+
+### Algorithm
+
+\begin{algorithm}
+\caption{Stochastic SuSiE}\label{alg:cap}
+\begin{algorithmic}
+\Require Optimization schedule $(\alpha_t)_{t=1}^{\infty}\; s.t. \sum \alpha_t = \infty, \sum \alpha_t^2 < \infty,$
+\Require Initialzation $q_1^{(0)}, \dots q_L^{(0)}$
+\Repeat
+\State $t \gets 0$
+\For{$l = 1, \dots, L$}
+\For{$m = 1, \dots, M$}
+    \State $b_{-l}^{(m)}, \gamma_{-l}^{(m)} \sim q_{-l}^{(t)}$ \Comment{Sample other effects}
+    \State $\psi_{-l}^{(m)} \gets X \sum_{k \neq l} \gamma_k^{(m)}b_k^{(m)}$ \Comment{Linear prediction}
+    \State $\hat q ^{(m)}_l  \gets \text{SER}(y, X, \psi_{-l}, \pi, \sigma_0^2)$  \Comment{Fit SER with fixed offset}
+\EndFor
+    \State $\hat q_l \gets \frac{1}{M} \sum \hat q^{(m)}_l$ \Comment{Using summation to denote "combining" approximate posterior distributions}
+    \State $q_l^{(t+1)} \gets (1 - \alpha_t)q_l^{(t)} + \alpha_t \hat q_l$
+\EndFor
+\State $t \gets t+ 1$
+\Until forever
+
+\end{algorithmic}
+\end{algorithm}

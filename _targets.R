@@ -32,4 +32,3 @@ list(
   website
   #yusha_example_targets
 )
-

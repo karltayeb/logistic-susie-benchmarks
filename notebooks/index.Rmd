@@ -6,7 +6,7 @@
 * [Yusha's example](yusha_sc_tumor.html)
 * [Comparison of tilted vs JJ bound](tilted_vs_jj.html)
 * [Stochastic optimization for SuSiE](stochastic_susie.html)
-
+* [Wakefields ABF for GLM-SER underestimates large BFs](glm_abf_exploration.html)
 ## Simulation Results
 Click links below for comparison of different logistic SERs, and logistic SuSiE approaches.
 
