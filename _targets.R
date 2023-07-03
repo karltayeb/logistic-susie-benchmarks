@@ -28,6 +28,7 @@ list(
   make_X_targets(),
   half_normal_target,
   constant_sim_target,
+  pdac_targets,
   # realX_constant_sim_target,
   website
   #yusha_example_targets

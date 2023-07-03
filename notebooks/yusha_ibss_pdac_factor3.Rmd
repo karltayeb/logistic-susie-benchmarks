@@ -1,0 +1,113 @@
+---
+title: "Yusha exploration"
+---
+
+```{r load-data}
+library(glmnet)
+library(logisticsusie)
+library(dplyr)
+
+tar_load(ibss_fit_pdac_factor3)
+tar_load(pdac_lasso_fits)
+tar_load(pdac_msigdb_X)
+tar_load(pdac_data)
+tar_load(ibss_fit_marginal_only_pdac_factor3)
+
+lasso_fit_pdac_factor3 <- pdac_lasso_fits$factor3
+coef_1sd <- coef(lasso_fit_pdac_factor3, s = 'lambda.1se')[,1]
+nonzero_idx <- which(tail(coef_1sd, -1) != 0)
+X <- pdac_msigdb_X
+y <- as.integer(rownames(X) %in% pdac_data$gene_lists$factor3)
+```
+
+```{r run-ora}
+ora_pdac_factor3 <- gseasusie::fit_ora(X, y)
+
+gs_df <- data.frame(
+    geneSet = colnames(X), 
+    n = 1:ncol(X), 
+    pip = logisticsusie::compute_pip(ibss_fit_pdac_factor3$alpha)
+)
+
+ora_pdac_factor3 <- ora_pdac_factor3 %>%
+    left_join(gs_df) %>%
+    arrange(pFishersExact) %>%
+    mutate(rank = row_number(), pAdj = p.adjust(pFishersExact, method='BH')) %>%
+    select(geneSet, n, rank, pip, oddsRatio, pFishersExact, pAdj)
+
+ora_pdac_factor3 %>%
+    filter(pAdj < 0.05) %>%
+    knitr::kable()
+```
+
+
+The gene list consists of the top 129 genes in `factor3` of Yusha's matrix factorization (NMF?) fit to the pancreatic ductal adenocarcinoma (PDAC) data.
+Yusha provided (i) a list of background genes and (ii) the top 139 genes associated with each factor (how was this determined?). 
+For `factor3` 10 genes were filtered out due to the gene symbols not mapping to ENTREZIDs when using the `org.Hs.eg.db` annotation. 
+
+These data were used to perform the standard marginal overrperesentation analysis (ORA) via Fisher's exact test. 
+We also fit lasso using `glmnet`, and run "generalized IBSS" (GIBSS) with $L=8$ effects.
+
+Marginal results summary: 
+
+* There are 304 marginally enriched gene sets
+
+* 14 gene sets reported in lasso fit for `lambda.1se` (the penalty parameter within 1 standard error of the penalty parameter that minimized CV loss when running `cv.glmnet`)
+
+IBSS results are summarized here:
+
+* Returns 4 singleton CSs. All variables also in the lasso solution, and in the top 20 marginal enrichments.
+
+* 1 CS (`L6`) with 11 variables. These 11 variables are all among the top 30 marginally enriched, and not very correlated
+(CS has a purity of $\approx 0.09$).
+Rather than representing a coherent enrichment/association signal this CS captures several independent enrichments 
+that were not strong enough to capture a different single effect.
+
+* `L5` gives a credible set with 224 variables, and low purity. 
+The top variable in this CS has a posterior probability of $0.87$. 
+This is an example of a "borderline significant result". 
+`L7` and `L8` are similar, except with the top variable having a smaller probabilty ($0.36$ and $0.29$ respectively).
+In all cases these are strongly marginally enriched and identified in the lasso solution.
+
+
+* Stopped at the maximum of 20 iterations, the symmetrized KL between with approximate posterior 
+at the last two iterations $KL_{sym}[q^{t=19} || q^{t=20}] \approx 1e-6$ which I am guessing is 
+small enough that the solution would not change much qualitatively by futher iteration. 
+I will run for longer to see what happens.
+* IBSS was fit here with an adaptive procedure that would increase $L$ as long as all the existing single effects look "informative". 
+That is
+(1) have relatively small CSs,
+(2) the estimate prior variance for all effects is not below some threshold, 
+(3) the BF for all single effect regressions does not fall below some threshold.
+If all 3 of these conditions are satified then IBSS is rerun with $L$ doubled.
+
+```{r}
+# filter to variables included by lasso
+ora_pdac_factor3 %>%
+    filter(n %in% nonzero_idx) %>%
+    knitr::kable()
+```
+
+```{r}
+# look at credibls set 6 in glm-susie fit
+ora_pdac_factor3 %>%
+    filter(n %in% ibss_fit_pdac_factor3$cs$L6$cs) %>% 
+    knitr::kable()
+
+logisticsusie::compute_purity(ibss_fit_pdac_factor3$cs$L6$cs, X)
+heatmap(cor(as.matrix(X[, ibss_fit_pdac_factor3$cs$L6$cs])))
+```
+
+```{r}
+ibss_fit_pdac_factor3$cs
+ibss_fit_pdac_factor3$prior_variance
+ibss_fit_pdac_factor3$lbf_ser
+```
+
+```{r}
+marginal_enrichments_idx <- ora_pdac_factor3 %>%
+    filter(pAdj < 0.05) %>%
+    { .$n}
+
+ibss_fit_marginal_only_pdac_factor3$alpha
+```

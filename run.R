@@ -7,4 +7,5 @@
 
 # targets::tar_make()
 # targets::tar_make_clustermq(workers = 2) # nolint
-targets::tar_make_future(workers = 6) # nolint
+# targets::tar_make_future(workers = 6) # nolint
+targets::tar_make_future(ends_with('fits'), workers = 12) # nolint
