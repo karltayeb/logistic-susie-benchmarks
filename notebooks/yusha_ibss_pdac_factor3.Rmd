@@ -1,9 +1,9 @@
 ---
-title: "Yusha exploration"
+title: "Yusha PDAC Factor 3"
 output:
     html_document:
         toc : true
-        toc_depth: 2
+        toc_depth: 3
         toc_float: true
 
 ---
@@ -72,6 +72,9 @@ ora_pdac_factor3 %>%
 ```
 
 
+### IBSS overview
+
+
 IBSS results are summarized here:
 
 * Returns 4 singleton CSs. All variables also in the lasso solution, and in the top 20 marginal enrichments.
@@ -98,35 +101,6 @@ That is
 (2) the estimate prior variance for all effects is not below some threshold, 
 (3) the BF for all single effect regressions does not fall below some threshold.
 If all 3 of these conditions are satified then IBSS is rerun with $L$ doubled.
-
-### IBSS overview
-
-IBSS results are summarized here:
-
-* Returns 4 singleton CSs. All variables also in the lasso solution, and in the top 20 marginal enrichments.
-
-* 1 CS (`L6`) with 11 variables. These 11 variables are all among the top 30 marginally enriched, and not very correlated (CS has a purity of $\approx 0.09$
-). Rather than representing a coherent enrichment/association signal this CS captures several independent enrichments that were not strong enough to capture a different single effect.
-
-* `L5` gives a credible set with 224 variables, and low purity. 
-The top variable in this CS has a posterior probability of 0.87. 
-This is an example of a “borderline significant result”. 
-L7 and L8 are similar, except with the top variable having a smaller probabilty 
-(0.36 and 0.29 respectively). 
-In all cases these are strongly marginally enriched and identified in the lasso solution.
-
-* Stopped at the maximum of 20 iterations, the symmetrized KL between with approximate posterior at the last two iterations $KL_{sym}[q_{t=19}||q_{t=20}]≈1e−6$
- which I am guessing is small enough that the solution would not change much qualitatively by futher iteration. I will run for longer to see what happens.
-
-* IBSS was fit here with an adaptive procedure that would increase L
- as long as all the existing single effects look “informative”. That is
-
-    1. have relatively small CSs
-
-    1. the estimate prior variance for all effects is not below some threshold,
-
-    1. the BF for all single effect regressions does not fall below some threshold. 
-    If all 3 of these conditions are satified then IBSS is rerun with L doubled.
 
 ```{r}
 ibss_fit_pdac_factor3$cs

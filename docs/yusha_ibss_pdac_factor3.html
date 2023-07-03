@@ -11,7 +11,7 @@
 
 
 
-<title>Yusha exploration</title>
+<title>Yusha PDAC Factor 3</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -1483,7 +1483,7 @@ border-radius: 0px;
 
 
 
-<h1 class="title toc-ignore">Yusha exploration</h1>
+<h1 class="title toc-ignore">Yusha PDAC Factor 3</h1>
 
 </div>
 
@@ -1534,7 +1534,7 @@ that minimized CV loss when running <code>cv.glmnet</code>)</p></li>
 </ul>
 <pre class="r"><code>ora_pdac_factor3 &lt;- gseasusie::fit_ora(X, y)</code></pre>
 <pre><code>## computing ORA statistics...</code></pre>
-<pre><code>## 5.875 sec elapsed</code></pre>
+<pre><code>## 4.255 sec elapsed</code></pre>
 <pre class="r"><code>gs_df &lt;- data.frame(
     geneSet = colnames(X), 
     n = 1:ncol(X), 
@@ -4819,7 +4819,7 @@ $(document).ready(function ()  {
 
     // establish options
     var options = {
-      selectors: "h1,h2",
+      selectors: "h1,h2,h3",
       theme: "bootstrap3",
       context: '.toc-content',
       hashGenerator: function (text) {
